@@ -68,8 +68,13 @@ struct MixTabView: View {
     // MARK: - Build
 
     private var buildBody: some View {
-        VStack(spacing: 0) {
+        // Compute the quick-start presets once per render — pure reads of the observed
+        // library/catalog/favorites, so the section appears (and grows) as that data loads, and
+        // simply isn't rendered when nothing qualifies (the manual POOL below always shows).
+        let suggested = suggestions
+        return VStack(spacing: 0) {
             mixHeader
+            if !suggested.isEmpty { suggestedSection(suggested) }
             poolHeader
             if hasCandidates { poolList } else { emptyPool }
             controls
@@ -97,6 +102,64 @@ struct MixTabView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 2).padding(.bottom, 10)
+    }
+
+    // MARK: - Suggested mixes (quick-start presets)
+    //
+    // A horizontal scroll row of one-tap cards at the top of the build view, above the manual
+    // POOL. Each card builds a preset pool and starts a shuffled, full-Qur'an mix immediately —
+    // `model.isMixing` then flips true and the playing branch takes over (no extra nav). The set
+    // of cards is computed live in `suggestions`; only the qualifying ones render, and the whole
+    // section is omitted when none qualify.
+
+    private func suggestedSection(_ suggestions: [MixSuggestion]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("SUGGESTED MIXES")
+                .font(.system(size: 9.5, weight: .bold)).tracking(1.4)
+                .foregroundStyle(tokens.muted)
+                .padding(.horizontal, 16).padding(.bottom, 7)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 9) {
+                    ForEach(suggestions) { suggestionCard($0) }
+                }
+                .padding(.horizontal, 14)
+            }
+        }
+        .padding(.top, 2).padding(.bottom, 12)
+    }
+
+    private func suggestionCard(_ s: MixSuggestion) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 0) {
+                Image(systemName: s.icon)
+                    .font(.system(size: 13, weight: .semibold)).foregroundStyle(tokens.accent)
+                    .frame(width: 30, height: 30)
+                    .background(tokens.accent.opacity(0.14), in: Circle())
+                Spacer(minLength: 4)
+                // Shuffle glyph: the tap affordance — every preset starts a shuffled mix.
+                Image(systemName: "shuffle").font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(tokens.accent)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(s.title).font(.system(size: 12.5, weight: .bold))
+                    .foregroundStyle(tokens.text).lineLimit(1).minimumScaleFactor(0.85)
+                Text(s.subtitle).font(.system(size: 10)).foregroundStyle(tokens.muted).lineLimit(1)
+            }
+        }
+        .padding(11)
+        .frame(width: 150, alignment: .leading)
+        .background(tokens.glassTint, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(tokens.accent.opacity(0.18), lineWidth: 1))
+        .contentShape(RoundedRectangle(cornerRadius: 14))
+        .onTapGesture { startSuggestion(s) }
+        .help("Shuffle a full-Qur'an mix from \(s.title.lowercased())")
+    }
+
+    /// Build the preset's pool and start a shuffled, full-Qur'an session — same entry point the
+    /// manual Start uses, so `isMixing` flips and the playing queue takes over.
+    private func startSuggestion(_ s: MixSuggestion) {
+        model.startMix(config: MixConfig(order: .shuffle, range: .full),
+                       pool: model.buildPool(onDemandIDs: s.onDemandIDs, localNames: s.localNames))
     }
 
     // MARK: - Pool
@@ -343,6 +406,82 @@ struct MixTabView: View {
     }
 
     private var hasCandidates: Bool { !localCandidates.isEmpty || !onDemandCandidates.isEmpty }
+
+    // MARK: - Suggested-mix presets
+
+    /// One computed quick-start preset: a title/subtitle/icon plus the pool selection (on-demand
+    /// ids + local names) a tap should build and shuffle. Value type — recomputed each render.
+    private struct MixSuggestion: Identifiable {
+        let id: String
+        let title: String
+        let subtitle: String
+        let icon: String
+        let onDemandIDs: Set<Int>
+        let localNames: Set<String>
+    }
+
+    /// Famous-qari name fragments matched case-insensitively against catalog reciter names to
+    /// surface the "Popular reciters" preset. Fragments (not full names) so transliteration
+    /// variants ("Husary"/"Husari", "Shuraim"/"Shuraym") and "First Last" forms all match.
+    private static let popularKeywords = ["sudais", "afasy", "alafasy", "husary", "husari",
+        "abdul basit", "basit", "ghamdi", "shuraim", "shuraym", "muaiqly", "maher", "minshawi",
+        "minshawy", "ajmi", "dossari", "dosari", "shatri", "rifai", "tablawi"]
+
+    /// Distinct reciter names present in the local library (📚) — the "From your Library" members.
+    private var libraryNames: Set<String> { Set(library.grouped().map(\.reciter)) }
+
+    /// Favorited on-demand reciters that the loaded catalog still lists (☁︎). Intersecting with
+    /// the catalog drops favorites whose reciter isn't present (catalog not yet loaded / reshaped).
+    private var favoriteIDs: Set<Int> { favorites.reciterIDs.intersection(catalog.reciters.map(\.id)) }
+
+    /// Catalog reciters whose name contains a famous-qari fragment (the "Popular reciters" members).
+    private var popularIDs: Set<Int> {
+        Set(catalog.reciters.filter { r in
+            let name = r.name.lowercased()
+            return Self.popularKeywords.contains { name.contains($0) }
+        }.map(\.id))
+    }
+
+    /// The qualifying quick-start presets in display order. Each preset is included only when it
+    /// has enough members to be worth a one-tap shuffle (library/favorites ≥1, popular ≥2);
+    /// "Everything" only when its distinct membership is both ≥2 and strictly larger than any
+    /// single preset above it (so it never just duplicates one). An empty result hides the section.
+    private var suggestions: [MixSuggestion] {
+        let lib = libraryNames, favs = favoriteIDs, pop = popularIDs
+        var out: [MixSuggestion] = []
+        if lib.count >= 1 {
+            out.append(MixSuggestion(id: "library", title: "From your Library",
+                                     subtitle: qariSubtitle(lib.count, "local"),
+                                     icon: "music.note.house", onDemandIDs: [], localNames: lib))
+        }
+        if favs.count >= 1 {
+            out.append(MixSuggestion(id: "favorites", title: "Your favorites",
+                                     subtitle: qariSubtitle(favs.count, "favorited"),
+                                     icon: "heart", onDemandIDs: favs, localNames: []))
+        }
+        if pop.count >= 2 {
+            out.append(MixSuggestion(id: "popular", title: "Popular reciters",
+                                     subtitle: qariSubtitle(pop.count, "famous"),
+                                     icon: "star", onDemandIDs: pop, localNames: []))
+        }
+        // "Everything": union of every preset's members (favorites/popular overlap in id-space, so
+        // union; local names live in their own space and just add). Shown only when it genuinely
+        // combines more than the widest single card above — otherwise it would duplicate that card.
+        let everythingIDs = favs.union(pop)
+        let everythingCount = lib.count + everythingIDs.count
+        let widestSingle = max(lib.count, favs.count, pop.count)
+        if everythingCount >= 2 && everythingCount > widestSingle {
+            out.append(MixSuggestion(id: "everything", title: "Everything available",
+                                     subtitle: "all \(everythingCount) qaris",
+                                     icon: "shuffle", onDemandIDs: everythingIDs, localNames: lib))
+        }
+        return out
+    }
+
+    /// "1 local qari" / "3 favorited qaris" — pluralized subtitle for a preset card.
+    private func qariSubtitle(_ n: Int, _ adjective: String) -> String {
+        "\(n) \(adjective) qari\(n == 1 ? "" : "s")"
+    }
 
     /// The session on-demand selection reconciled against the loaded catalog — a seeded id whose
     /// reciter the catalog no longer lists (reshaped, or not yet loaded) is a phantom, dropped so
