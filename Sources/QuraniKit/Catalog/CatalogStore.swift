@@ -21,16 +21,19 @@ import Foundation
 
     /// Case-insensitive filter over the cached reciters.
     /// - `search`: matches reciter name by substring; empty string passes everything through.
-    /// - `riwaya`: matches when any of the reciter's moshafs has a name containing the token;
-    ///   nil (or empty) passes everything through.
+    /// - `riwaya`: matches when any of the reciter's moshafs has a name containing one of the
+    ///   chip's alias spellings (see `riwayaAliases`); nil (or empty) passes everything through.
     public func filtered(search: String, riwaya: String?) -> [Reciter] {
         reciters.filter { reciter in
             let nameOK = search.isEmpty
                 || reciter.name.range(of: search, options: .caseInsensitive) != nil
             let riwayaOK: Bool
             if let riwaya, !riwaya.isEmpty {
-                riwayaOK = reciter.moshafs.contains {
-                    $0.name.range(of: riwaya, options: .caseInsensitive) != nil
+                // Resolve the chip label to the spellings the live feed actually uses
+                // (e.g. "Mujawwad" → "Mojawwad"); an unmapped token matches itself.
+                let aliases = Self.riwayaAliases[riwaya] ?? [riwaya]
+                riwayaOK = reciter.moshafs.contains { moshaf in
+                    aliases.contains { moshaf.name.range(of: $0, options: .caseInsensitive) != nil }
                 }
             } else {
                 riwayaOK = true
@@ -38,6 +41,17 @@ import Foundation
             return nameOK && riwayaOK
         }
     }
+
+    /// Maps each riwaya chip label to the moshaf-name substrings that identify it in the live
+    /// mp3quran feed, which transliterates some as "Mojawwad"/"Mo'lim" rather than the chip's
+    /// display label. A match on any candidate (case-insensitive) counts; a label absent here
+    /// falls back to matching itself, so arbitrary tokens still behave as plain substrings.
+    static let riwayaAliases: [String: [String]] = [
+        "Hafs": ["Hafs"],
+        "Warsh": ["Warsh"],
+        "Mujawwad": ["Mojawwad", "Mujawwad"],
+        "Muallim": ["Mo'lim", "Mo'allim", "Muallim"],
+    ]
 
     /// Fetches the live reciter catalog (English names). 15s timeout so a slow/dead host
     /// doesn't hang the Explore view.
