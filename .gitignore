@@ -15,3 +15,7 @@ xcuserdata/
 
 .xcodeproj/
 *.xcodeproj
+
+Qurani.app
+.build-app/
+.run.entitlements
