@@ -14,7 +14,7 @@ struct QuraniApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            GlassPanel(sources: model.sources, engine: model.engine,
+            GlassPanel(model: model, sources: model.sources, engine: model.engine,
                        catalog: model.catalog, favorites: model.favorites, pool: model.pool,
                        library: model.library, importer: model.importer,
                        surahs: model.surahs,

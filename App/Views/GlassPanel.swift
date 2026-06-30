@@ -3,6 +3,10 @@ import AppKit
 import QuraniKit
 
 struct GlassPanel: View {
+    /// The root model — held (not observed) so the Mix tab can call `buildPool`/`startMix` and
+    /// derive its own `@ObservedObject` child stores. Its child stores are still observed
+    /// individually below, since AppModel doesn't forward their changes.
+    let model: AppModel
     @ObservedObject var sources: SourcesStore
     @ObservedObject var engine: PlaybackEngine
     // Explore stores observed directly here so they republish into the panel — AppModel
@@ -62,11 +66,7 @@ struct GlassPanel: View {
                     LibraryTabView(library: library, importer: importer, engine: engine,
                                    surahs: surahs, tokens: tokens, playLocal: playLocal)
                 default:
-                    VStack(spacing: 6) {
-                        Image(systemName: "sparkles").font(.system(size: 22)).foregroundStyle(tokens.muted)
-                        Text("Coming in a later plan").font(.system(size: 12)).foregroundStyle(tokens.muted)
-                    }
-                    .frame(height: 300).frame(maxWidth: .infinity)
+                    MixTabView(model: model, tokens: tokens)
                 }
             }
 

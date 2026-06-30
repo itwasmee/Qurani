@@ -49,6 +49,11 @@ import QuraniKit
         let reciters = (try? RadiosService.decode(reciterJSON)) ?? []
         var written: [String] = []
 
+        // A throwaway root model purely to satisfy GlassPanel's initializer — the snapshot renders
+        // the Live tab, so the Mix tab (the only consumer of `model`) is never built. Created once so
+        // `Hotkeys.register` doesn't run per iteration.
+        let snapshotModel = AppModel()
+
         // GlassPanel in both Noor (dark) and Sahar (light), Makkah playing.
         for (raw, isDark) in [("noor", true), ("sahar", false)] {
             UserDefaults.standard.set(raw, forKey: "theme")     // drives GlassPanel's @AppStorage
@@ -59,7 +64,7 @@ import QuraniKit
             if let first = featured.first { engine.playStation(first) }   // one station playing
             let tmp = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             let library = LibraryStore(directory: tmp)
-            let panel = GlassPanel(sources: sources, engine: engine,
+            let panel = GlassPanel(model: snapshotModel, sources: sources, engine: engine,
                                    catalog: CatalogStore(), favorites: FavoritesStore(directory: tmp),
                                    pool: MixPoolStore(directory: tmp),
                                    library: library, importer: LibraryImporter(library: library),

@@ -141,7 +141,8 @@ import QuraniKit
         mixPool = pool
         rebuildQueue()
         mixIndex = 0
-        guard !mixQueue.isEmpty else { isMixing = false; return }
+        // No covered surah → no session: tear down any prior one rather than just clearing the flag.
+        guard !mixQueue.isEmpty else { stopMix(); return }
         isMixing = true
         engine.onFinish = { [weak self] in self?.advanceMix() }
         playMixIndex(0)
@@ -149,16 +150,18 @@ import QuraniKit
 
     /// Load and play the queue item at `i`, resolving its pool member to a `PlaybackItem`:
     /// on-demand members stream their moshaf's per-surah URL; local members resolve the matching
-    /// `LocalTrack`'s bookmark. A local track that no longer resolves (moved/deleted) is skipped to
-    /// the next item rather than stalling the session.
+    /// `LocalTrack`'s bookmark. Any unresolvable item — a member missing from the pool, an on-demand
+    /// surah absent from the loaded data, or a local track that no longer resolves (moved/deleted) —
+    /// is skipped to the next item rather than stalling the session. `mixIndex` is committed up front
+    /// so those skips advance from `i` (not the previously-played index).
     private func playMixIndex(_ i: Int) {
         guard mixQueue.indices.contains(i) else { return }
-        let item = mixQueue[i]
-        guard let member = mixPool.first(where: { $0.id == item.memberID }) else { return }
         mixIndex = i
+        let item = mixQueue[i]
+        guard let member = mixPool.first(where: { $0.id == item.memberID }) else { advanceMix(); return }
         switch member.source {
         case .onDemand:
-            guard let surah = surahs.first(where: { $0.number == item.surah }) else { return }
+            guard let surah = surahs.first(where: { $0.number == item.surah }) else { advanceMix(); return }
             // moshaf/reciterID are non-nil for every on-demand member `buildPool` emits.
             let url = CatalogService.audioURL(serverBase: member.moshaf!.serverBase, surah: item.surah)
             engine.play(.onDemand(reciterID: member.reciterID!, reciterName: member.reciterName,
@@ -187,6 +190,7 @@ import QuraniKit
     /// Re-roll the session: rebuild the queue from the same pool + config with a fresh random
     /// assignment and ordering, then restart from the top of the new queue.
     func rerollMix() {
+        guard isMixing else { return }   // no-op without an active session to re-roll
         rebuildQueue()
         mixIndex = 0
         playMixIndex(0)
