@@ -1,0 +1,23 @@
+import Foundation
+
+@MainActor public final class SourcesStore: ObservableObject {
+    @Published public private(set) var featured: [Station] = []
+    @Published public private(set) var reciterStations: [Station] = []
+    private let bundle: Bundle
+    // `.module` is generated as an internal accessor, so it cannot be a default
+    // argument of a public initializer; expose it via a convenience init instead.
+    public init(bundle: Bundle) { self.bundle = bundle }
+    public convenience init() { self.init(bundle: .module) }
+
+    public func loadFeatured() throws { featured = try CuratedStations.load(bundle: bundle) }
+
+    public func loadReciterStations(_ fetch: () async throws -> Data) async {
+        do { reciterStations = try RadiosService.decode(try await fetch()) }
+        catch { reciterStations = [] }   // offline: featured still works
+    }
+
+    public static func fetchRadios() async throws -> Data {
+        let url = URL(string: "https://www.mp3quran.net/api/v3/radios?language=eng")!
+        return try await URLSession.shared.data(from: url).0
+    }
+}
