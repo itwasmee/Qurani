@@ -66,7 +66,8 @@ struct GlassPanel: View {
             Group {
                 switch tab {
                 case 0:
-                    LiveTabView(sources: sources, engine: engine, tokens: tokens)
+                    LiveTabView(sources: sources, engine: engine, tokens: tokens,
+                                play: { model.playStation($0) })
                 case 1:
                     ExploreTabView(catalog: catalog, favorites: favorites, pool: pool,
                                    engine: engine, surahs: surahs, tokens: tokens, play: play)

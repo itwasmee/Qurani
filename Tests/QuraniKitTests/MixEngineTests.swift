@@ -37,3 +37,13 @@ private let B = PoolMember(id: "b", source: .local, displayName: "B", reciterNam
                                  surahJuz: [1: 1, 2: 1, 3: 3], pickIndex: { _ in 0 }, shuffle: { $0 })
     #expect(q.map(\.surah) == [1, 2])
 }
+
+@Test func pickIndexReceivesCandidateCountNotPoolCount() {
+    // Regression guard: pickIndex must be called with the count of *candidates* covering each surah,
+    // not the whole pool size. A=[1,2,3], B=[2] over surahs 1…3 ⇒ candidate counts 1, 2, 1. A bug
+    // passing `pool.count` would surface here as [2, 2, 2].
+    var seen: [Int] = []
+    _ = MixEngine.buildQueue(pool: [A, B], config: MixConfig(order: .inOrder, range: .custom(1...3)),
+                             surahJuz: [:], pickIndex: { seen.append($0); return 0 }, shuffle: { $0 })
+    #expect(seen == [1, 2, 1])
+}

@@ -5,6 +5,9 @@ struct LiveTabView: View {
     @ObservedObject var sources: SourcesStore
     @ObservedObject var engine: PlaybackEngine
     let tokens: Tokens
+    /// Plays a station via `AppModel.playStation` (which ends any active mix first) — not
+    /// `engine.playStation` directly, so a live pick can't leave a stale mix session running.
+    let play: (Station) -> Void
 
     var body: some View {
         ScrollView {
@@ -12,13 +15,13 @@ struct LiveTabView: View {
                 section("FEATURED · LIVE")
                 ForEach(sources.featured) { st in
                     StationRow(station: st, tokens: tokens, isPlaying: isPlaying(st))
-                        .onTapGesture { engine.playStation(st) }
+                        .onTapGesture { play(st) }
                 }
                 if !sources.reciterStations.isEmpty {
                     section("RECITER STATIONS · 24/7")
                     ForEach(sources.reciterStations.prefix(40)) { st in
                         StationRow(station: st, tokens: tokens, isPlaying: isPlaying(st))
-                            .onTapGesture { engine.playStation(st) }
+                            .onTapGesture { play(st) }
                     }
                 }
             }

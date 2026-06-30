@@ -83,6 +83,15 @@ import QuraniKit
         engine.play(.localTrack(track: track, url: url))
     }
 
+    /// Play a live radio station. Routed through here (not `engine.playStation` directly) so an
+    /// explicit live pick ends any active random-mix session — same contract as `playOnDemand` /
+    /// `playLocal`. Without this, tapping a Live station while mixing leaves `isMixing` set (stale
+    /// "up next" hint under a LIVE item, and a re-roll could hijack audio back off the station).
+    func playStation(_ s: Station) {
+        if isMixing { stopMix() }
+        engine.playStation(s)
+    }
+
     /// Commit the review sheet's confirmed imports to the library, then drop them from the pending
     /// list. Each `ReviewedImport` pairs with its `PendingImport` by id to recover the security-scoped
     /// bookmark, confidence, and duration captured at import time.

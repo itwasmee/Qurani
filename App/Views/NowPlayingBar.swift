@@ -105,7 +105,7 @@ struct NowPlayingBar: View {
                 }
                 .buttonStyle(.plain)
             }
-            if isMixing, let upNext { upNextLine(upNext) }
+            if isMixing, !np.isLive, let upNext { upNextLine(upNext) }
             // On-demand items have a finite length → offer a draggable scrubber. Live keeps
             // only the red LIVE pill (set above) and shows no progress control.
             if !np.isLive, np.duration > 0 { scrubber(np) }
