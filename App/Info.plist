@@ -5,5 +5,21 @@
   <key>CFBundleName</key><string>Qurani</string>
   <key>ATSApplicationFontsPath</key><string>.</string>
   <key>NSAppTransportSecurity</key>
-  <dict><key>NSAllowsArbitraryLoads</key><true/></dict>
+  <dict>
+    <key>NSExceptionDomains</key>
+    <dict>
+      <!-- radiojar 302s the Egypt feed to insecure HTTP; qurango icecast is HTTP.
+           The https Akamai / kwikmotion / mp3quran feeds need no exception. -->
+      <key>radiojar.com</key>
+      <dict>
+        <key>NSExceptionAllowsInsecureHTTPLoads</key><true/>
+        <key>NSIncludesSubdomains</key><true/>
+      </dict>
+      <key>qurango.net</key>
+      <dict>
+        <key>NSExceptionAllowsInsecureHTTPLoads</key><true/>
+        <key>NSIncludesSubdomains</key><true/>
+      </dict>
+    </dict>
+  </dict>
 </dict></plist>

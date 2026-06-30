@@ -18,6 +18,8 @@ import Foundation
 
     public static func fetchRadios() async throws -> Data {
         let url = URL(string: "https://www.mp3quran.net/api/v3/radios?language=eng")!
-        return try await URLSession.shared.data(from: url).0
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 15   // don't hang bootstrap on a slow/dead catalog host
+        return try await URLSession.shared.data(for: request).0
     }
 }

@@ -30,3 +30,18 @@ import Foundation
     #expect(stations[1].url.absoluteString == "https://qurango.net/radio/mishari")
     #expect(stations[1].reciter == "مشاري العفاسي")
 }
+
+@Test func decodeSkipsMalformedRowsInsteadOfDiscardingAll() throws {
+    let json = """
+    {"radios":[
+      {"id":1,"name":"Good","url":"https://qurango.net/radio/a"},
+      {"id":2,"name":"NoHost","url":"http://"},
+      {"id":3,"name":"HasSpaces","url":"not a url at all"},
+      {"id":4,"name":"AlsoGood","url":"https://backup.qurango.net/radio/c"}
+    ]}
+    """.data(using: .utf8)!
+    let stations = try RadiosService.decode(json)
+    #expect(stations.count == 2)                       // the two bad rows dropped, not all four
+    #expect(stations.map(\.id) == ["radio_1", "radio_4"])
+    #expect(stations[1].url.host == "qurango.net")     // row 4 still host-rewritten
+}

@@ -13,5 +13,4 @@ DerivedData/
 xcuserdata/
 
 .xcodeproj/
-.build/
 *.xcodeproj

@@ -8,13 +8,19 @@ public enum RadiosService {
     }
 
     private struct Payload: Decodable { let radios: [Radio] }
-    private struct Radio: Decodable { let id: Int; let name: String; let url: URL }
+    // Tolerant row shape: `url` is decoded as String, then validated per-row. A single
+    // malformed URL must skip only that station, not throw away the whole ~174-row catalog.
+    private struct Radio: Decodable { let id: Int; let name: String; let url: String }
 
     public static func decode(_ data: Data) throws -> [Station] {
         let payload = try JSONDecoder().decode(Payload.self, from: data)
-        return payload.radios.map { r in
-            Station(id: "radio_\(r.id)", name: r.name, region: "24/7",
-                    kind: .icecast, url: rewriteHost(r.url), reciter: r.name, hasVideo: false)
+        return payload.radios.compactMap { r -> Station? in
+            guard let url = URL(string: r.url),
+                  let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
+                  let host = url.host, !host.isEmpty
+            else { return nil }
+            return Station(id: "radio_\(r.id)", name: r.name, region: "24/7",
+                           kind: .icecast, url: rewriteHost(url), reciter: r.name, hasVideo: false)
         }
     }
 }
