@@ -161,6 +161,19 @@ let testSurah = Surah(number: 67, nameAr: "الْمُلْك", translit: "Al-Mulk
     #expect(e.currentSourceID == "ondemand:9:3:67")
 }
 
+@MainActor @Test func playLocalSetsSourceAndNotLive() {
+    let p = FakePlayer(); let e = PlaybackEngine(player: p)
+    e.attachSurahs([Surah(number: 67, nameAr: "الْمُلْك", translit: "Al-Mulk", nameEn: "", ayahCount: 30, makki: true, juz: 29)])
+    let t = LocalTrack(bookmark: Data(), reciterName: "Husary", surahNumber: 67, confidence: 0.9, durationMs: 1000)
+    let url = URL(fileURLWithPath: "/tmp/x.mp3")
+    e.play(.localTrack(track: t, url: url))
+    #expect(p.lastURL == url)
+    #expect(e.nowPlaying?.title == "الْمُلْك")
+    #expect(e.nowPlaying?.subtitle == "Husary")
+    #expect(e.nowPlaying?.isLive == false)
+    #expect(e.currentSourceID == "local:\(t.id)")
+}
+
 // NEW-3: toggling an on-demand item that already reached its end restarts it from 0 (seeks to
 // fraction 0 before play), rather than flipping to pause.
 @MainActor @Test func playAtEndSeeksToZero() {

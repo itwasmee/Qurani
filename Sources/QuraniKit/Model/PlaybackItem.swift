@@ -6,6 +6,9 @@ import Foundation
 public enum PlaybackItem: Sendable, Equatable {
     case liveStation(Station)
     case onDemand(reciterID: Int, reciterName: String, moshafID: Int, surah: Surah, url: URL)
+    /// A library-identified local file. The resolved file `url` is carried alongside the track
+    /// for this session; bookmark resolution happens in the app target (a later task).
+    case localTrack(track: LocalTrack, url: URL)
 
     public var isLive: Bool { if case .liveStation = self { return true }; return false }
 
@@ -13,6 +16,7 @@ public enum PlaybackItem: Sendable, Equatable {
         switch self {
         case .liveStation(let s): return s.url
         case .onDemand(_, _, _, _, let u): return u
+        case .localTrack(_, let u): return u
         }
     }
 
@@ -24,6 +28,7 @@ public enum PlaybackItem: Sendable, Equatable {
         case .liveStation(let s): return "live:\(s.id)"
         case .onDemand(let reciterID, _, let moshafID, let surah, _):
             return "ondemand:\(reciterID):\(moshafID):\(surah.number)"
+        case .localTrack(let track, _): return "local:\(track.id)"
         }
     }
 }

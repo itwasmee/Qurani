@@ -59,6 +59,12 @@ import Foundation
             nowPlaying = NowPlaying(title: surah.nameAr,
                                     subtitle: reciterName,
                                     isLive: false, surahHint: nil)
+        case .localTrack(let track, _):
+            let title = surahs.first { $0.number == track.surahNumber }?.nameAr
+                ?? "Surah \(track.surahNumber)"
+            nowPlaying = NowPlaying(title: title,
+                                    subtitle: track.reciterName,
+                                    isLive: false, surahHint: nil)
         }
         player.replace(url: item.url)
         player.volume = volume
