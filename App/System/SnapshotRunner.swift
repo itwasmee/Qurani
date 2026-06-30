@@ -3,6 +3,11 @@ import AppKit
 import CoreText
 import QuraniKit
 
+// DEBUG-only: the entire snapshot/visual-review runtime path. It is launch-flag-gated (`--snapshot`)
+// and inert in normal use, but must not compile into the release binary (Plan 5 DoD). The only
+// dispatch site (`QuraniApp.init`) is likewise wrapped in `#if DEBUG`.
+#if DEBUG
+
 /// An AudioPlayer that confirms playback synchronously — lets the snapshot engine reach
 /// `.playing` without real audio or a network.
 @MainActor final class SnapshotPlayer: AudioPlayer {
@@ -457,3 +462,5 @@ import QuraniKit
         return (try? png.write(to: URL(fileURLWithPath: path))) != nil
     }
 }
+
+#endif

@@ -24,26 +24,38 @@ import QuraniKit
     private var cancellables: Set<AnyCancellable> = []
     private var didLoad = false
 
-    /// `storesDirectory` redirects the persisted stores (favorites / pool / library) to a given
-    /// directory — nil uses the real Application Support path. Snapshots and tests pass a throwaway
-    /// directory so rendering the Mix/Library/Explore tabs never reads or mutates the user's data.
-    init(storesDirectory: URL? = nil) {
+    /// Production: the persisted stores (favorites / pool / library / settings) use the real
+    /// Application Support path.
+    convenience init() {
+        self.init(favorites: FavoritesStore(), pool: MixPoolStore(),
+                  library: LibraryStore(), settings: SettingsStore())
+    }
+
+    #if DEBUG
+    /// Snapshot/test seam: redirect the persisted stores to a throwaway `directory` so rendering the
+    /// Mix/Library/Explore/Settings tabs never reads or mutates the user's real data. DEBUG-only — the
+    /// seam must not ship in the release binary.
+    convenience init(storesDirectory directory: URL) {
+        self.init(favorites: FavoritesStore(directory: directory), pool: MixPoolStore(directory: directory),
+                  library: LibraryStore(directory: directory), settings: SettingsStore(directory: directory))
+    }
+    #endif
+
+    /// Designated init: wires the engine, Now Playing bridge, importer, hotkey, and Settings-driven
+    /// system effects around the four persisted stores it is handed (real or throwaway).
+    private init(favorites: FavoritesStore, pool: MixPoolStore, library: LibraryStore, settings: SettingsStore) {
         let engine = PlaybackEngine(player: AVAudioPlayerAdapter())
         self.engine = engine
         self.sources = SourcesStore()
         self.bridge = NowPlayingBridge(engine: engine)
-        if let dir = storesDirectory {
-            self.favorites = FavoritesStore(directory: dir)
-            self.pool = MixPoolStore(directory: dir)
-            self.library = LibraryStore(directory: dir)
-            self.settings = SettingsStore(directory: dir)
-        } else {
-            self.favorites = FavoritesStore()
-            self.pool = MixPoolStore()
-            self.library = LibraryStore()
-            self.settings = SettingsStore()
-        }
-        self.importer = LibraryImporter(library: library)
+        self.favorites = favorites
+        self.pool = pool
+        self.library = library
+        self.settings = settings
+        // Give the importer a live read of the Auto-import setting so `chooseLibraryFolder()` only
+        // re-arms the watcher when auto-import is on (AppModel owns both the importer and settings).
+        self.importer = LibraryImporter(library: library,
+                                        autoImportEnabled: { [settings] in settings.autoImportEnabled })
 
         // Register media-key / remote-command targets and the global hotkey once.
         Hotkeys.register(engine)
@@ -303,12 +315,15 @@ import QuraniKit
                                         shuffle: { $0.shuffled() })
     }
 
+    #if DEBUG
     /// Seed an active Mix session's display state directly, bypassing `startMix` (no engine, no
     /// audio) — for snapshots / tests of the playing list. Mirrors `LibraryImporter.seedPending`.
+    /// DEBUG-only: the snapshot/test seam must not ship in the release binary.
     func seedMix(queue: [MixQueueItem], pool: [PoolMember], index: Int) {
         mixPool = pool
         mixQueue = queue
         mixIndex = index
         isMixing = true
     }
+    #endif
 }

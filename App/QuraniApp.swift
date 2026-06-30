@@ -6,10 +6,12 @@ struct QuraniApp: App {
     @StateObject private var model = AppModel()
 
     init() {
+        #if DEBUG
         // Debug visual-review path: render PNGs and exit(0) before the scene installs.
         if let outDir = SnapshotRunner.requestedOutputDir() {
             SnapshotRunner.run(outDir: outDir)   // never returns
         }
+        #endif
     }
 
     var body: some Scene {

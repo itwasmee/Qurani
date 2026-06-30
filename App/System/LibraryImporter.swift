@@ -49,6 +49,11 @@ struct ReviewedImport: Sendable, Equatable {
 
     private let library: LibraryStore
     private let defaults: UserDefaults
+    /// Reads the live Auto-import setting (injected by `AppModel`, which owns the `SettingsStore`).
+    /// `chooseLibraryFolder()` consults it so changing the library folder only re-arms the watcher
+    /// when the user has Auto-import on. Defaults to `{ true }` for snapshot/test importers that
+    /// never invoke `chooseLibraryFolder()`.
+    private let isAutoImportEnabled: @MainActor () -> Bool
     private var cancellables: Set<AnyCancellable> = []
 
     // Watched-folder state. `folderSource` fires on directory writes; `watchedFolderURL` holds the
@@ -65,9 +70,11 @@ struct ReviewedImport: Sendable, Equatable {
     private static let audioExtensions: Set<String> = ["mp3", "m4a", "aac", "m4b", "aif", "aiff", "wav", "caf"]
     private static let audioContentTypes: [UTType] = [.audio, .mp3, .mpeg4Audio]
 
-    init(library: LibraryStore, defaults: UserDefaults = .standard) {
+    init(library: LibraryStore, defaults: UserDefaults = .standard,
+         autoImportEnabled: @escaping @MainActor () -> Bool = { true }) {
         self.library = library
         self.defaults = defaults
+        self.isAutoImportEnabled = autoImportEnabled
         // Keep `cachedLibraryPaths` in step with the library. `$tracks` replays its current value on
         // subscribe (seeding the cache) and fires on every later change; it's published on the main
         // actor (both stores are `@MainActor`), so `assumeIsolated` reaches our isolated state safely.
@@ -121,7 +128,9 @@ struct ReviewedImport: Sendable, Equatable {
                                                    relativeTo: nil) else { return }
         defaults.set(bookmark, forKey: Self.libraryFolderBookmarkKey)
         stopWatching()      // drop any prior folder's watch before re-arming
-        startWatching()
+        // Honor the Auto-import setting: only re-arm the watcher when auto-import is on. The bookmark
+        // is stored regardless, so toggling auto-import on later arms it via `settings.$autoImportEnabled`.
+        if isAutoImportEnabled() { startWatching() }
     }
 
     /// Begin watching the stored library folder for new audio files. A no-op when no folder
@@ -219,11 +228,14 @@ struct ReviewedImport: Sendable, Equatable {
         pendingImports.removeAll { ids.contains($0.id) }
     }
 
+    #if DEBUG
     /// Seed `pendingImports` directly, bypassing the ingest pipeline — for snapshots / tests of the
-    /// review sheet (mirrors `CatalogStore.seed` / `SourcesStore.seed`).
+    /// review sheet (mirrors `CatalogStore.seed` / `SourcesStore.seed`). DEBUG-only: the snapshot/test
+    /// seam must not ship in the release binary.
     func seedPending(_ imports: [PendingImport]) {
         pendingImports = imports
     }
+    #endif
 
     // MARK: - Metadata
 

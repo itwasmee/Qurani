@@ -11,12 +11,14 @@ import Foundation
 
     public func loadFeatured() throws { featured = try CuratedStations.load(bundle: bundle) }
 
-    /// Inject already-decoded stations directly. For SwiftUI previews and the
-    /// `--snapshot` render path, which need deterministic content without a network.
+    #if DEBUG
+    /// Inject already-decoded stations directly. For the `--snapshot` render path, which needs
+    /// deterministic content without a network. DEBUG-only — not shipped in release.
     public func seed(featured: [Station], reciterStations: [Station]) {
         self.featured = featured
         self.reciterStations = reciterStations
     }
+    #endif
 
     public func loadReciterStations(_ fetch: () async throws -> Data) async {
         do { reciterStations = try RadiosService.decode(try await fetch()) }
