@@ -4,6 +4,13 @@ import QuraniKit
 struct GlassPanel: View {
     @ObservedObject var sources: SourcesStore
     @ObservedObject var engine: PlaybackEngine
+    // Explore stores observed directly here so they republish into the panel — AppModel
+    // does not forward its child stores' changes (same lesson as Plan 1's engine).
+    @ObservedObject var catalog: CatalogStore
+    @ObservedObject var favorites: FavoritesStore
+    @ObservedObject var pool: MixPoolStore
+    let surahs: [Surah]
+    let play: (Reciter, Moshaf, Surah) -> Void
     @Environment(\.colorScheme) private var scheme
     // Read the persisted theme directly here: @AppStorage is a reactive DynamicProperty,
     // so changing it from the gear menu re-renders the panel LIVE. (An @AppStorage on
@@ -36,9 +43,13 @@ struct GlassPanel: View {
             .padding(.horizontal, 12).padding(.bottom, 8)
 
             Group {
-                if tab == 0 {
+                switch tab {
+                case 0:
                     LiveTabView(sources: sources, engine: engine, tokens: tokens)
-                } else {
+                case 1:
+                    ExploreTabView(catalog: catalog, favorites: favorites, pool: pool,
+                                   engine: engine, surahs: surahs, tokens: tokens, play: play)
+                default:
                     VStack(spacing: 6) {
                         Image(systemName: "sparkles").font(.system(size: 22)).foregroundStyle(tokens.muted)
                         Text("Coming in a later plan").font(.system(size: 12)).foregroundStyle(tokens.muted)

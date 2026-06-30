@@ -15,6 +15,10 @@ import Foundation
         catch { reciters = [] }
     }
 
+    /// Inject already-decoded reciters directly. For SwiftUI previews and the
+    /// `--snapshot` render path, which need deterministic content without a network.
+    public func seed(reciters: [Reciter]) { self.reciters = reciters }
+
     /// Case-insensitive filter over the cached reciters.
     /// - `search`: matches reciter name by substring; empty string passes everything through.
     /// - `riwaya`: matches when any of the reciter's moshafs has a name containing the token;

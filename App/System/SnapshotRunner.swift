@@ -57,7 +57,11 @@ import QuraniKit
             sources.seed(featured: featured, reciterStations: reciters)
             let engine = PlaybackEngine(player: SnapshotPlayer())
             if let first = featured.first { engine.playStation(first) }   // one station playing
-            let panel = GlassPanel(sources: sources, engine: engine)
+            let tmp = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            let panel = GlassPanel(sources: sources, engine: engine,
+                                   catalog: CatalogStore(), favorites: FavoritesStore(directory: tmp),
+                                   pool: MixPoolStore(directory: tmp), surahs: [],
+                                   play: { _, _, _ in })   // Live tab is shown; Explore data unused here
                 .environment(\.colorScheme, isDark ? .dark : .light)  // fallback if @AppStorage is unset
                 .background(Tokens.of(resolved).bg)                   // opaque backing for the vibrancy gap
             let path = "\(outDir)/panel-\(raw).png"
@@ -71,11 +75,68 @@ import QuraniKit
         let surahPath = "\(outDir)/surah-name.png"
         if writePNG(surah, to: surahPath) { written.append(surahPath) }
 
+        // Explore tab (Noor): the reciter catalog + a reciter opened, one surah streaming.
+        renderExplore(outDir: outDir, written: &written)
+
         let log = written.isEmpty
             ? "Qurani snapshot: ImageRenderer produced no images (headless render unsupported).\n"
             : "Qurani snapshot wrote:\n" + written.joined(separator: "\n") + "\n"
         FileHandle.standardError.write(Data(log.utf8))
         exit(0)
+    }
+
+    /// Renders the two Explore surfaces in Noor: the reciter catalog (`explore-list.png`)
+    /// and a reciter opened with one surah streaming (`reciter-detail.png`). Uses seeded
+    /// sample reciters + the real surah list, and a `SnapshotPlayer` so the highlighted row
+    /// reaches `.playing` without audio or a network.
+    private static func renderExplore(outDir: String, written: inout [String]) {
+        let noor = Tokens.of(.noor)
+        let surahs = (try? QuranData.loadSurahs()) ?? []
+        let base = URL(string: "https://server.example/")!
+        func moshaf(_ id: Int, _ name: String, _ nums: [Int]) -> Moshaf {
+            Moshaf(id: id, name: name, serverBase: base, surahNumbers: nums)
+        }
+        let reciters = [
+            Reciter(id: 1, name: "Mishary Alafasy",
+                    // 55 kept high in the list so the streaming-row highlight is visible
+                    // above the fold in the 300pt-tall detail snapshot.
+                    moshafs: [moshaf(1, "Hafs · Murattal", [1, 55, 67, 112]),
+                              moshaf(2, "Mujawwad", [1, 36, 55, 67])]),
+            Reciter(id: 2, name: "Abdul Basit Abdul Samad",
+                    moshafs: [moshaf(3, "Murattal", [1, 2, 112]),
+                              moshaf(4, "Mujawwad", [1, 55, 112])]),
+            Reciter(id: 3, name: "Mahmoud Khalil Al-Husary", moshafs: [moshaf(5, "Muallim", [1, 2, 36])]),
+            Reciter(id: 4, name: "Yasser Al-Dossari", moshafs: [moshaf(6, "Hafs", [1, 2, 67])]),
+            Reciter(id: 5, name: "Saad Al-Ghamdi", moshafs: [moshaf(7, "Hafs", [1, 55, 112])]),
+        ]
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+
+        // A: reciter catalog — one reciter already added to the Mix pool (✓).
+        let catalog = CatalogStore(); catalog.seed(reciters: reciters)
+        let listPool = MixPoolStore(directory: tmp); listPool.toggle(reciter: 2)
+        let list = ExploreTabView(
+            catalog: catalog, favorites: FavoritesStore(directory: tmp), pool: listPool,
+            engine: PlaybackEngine(player: SnapshotPlayer()), surahs: surahs,
+            tokens: noor, play: { _, _, _ in })
+            .frame(width: 344).background(noor.bg)
+        let listPath = "\(outDir)/explore-list.png"
+        if writePNG(list, to: listPath) { written.append(listPath) }
+
+        // B: reciter detail — favorited + pooled, Ar-Rahman (55) streaming on demand.
+        let reciter = reciters[0]
+        let favs = FavoritesStore(directory: tmp); favs.toggle(reciter: reciter.id)
+        let pool = MixPoolStore(directory: tmp); pool.toggle(reciter: reciter.id)
+        let engine = PlaybackEngine(player: SnapshotPlayer()); engine.attachSurahs(surahs)
+        if let s55 = surahs.first(where: { $0.number == 55 }) {
+            let url = CatalogService.audioURL(serverBase: reciter.moshafs[0].serverBase, surah: 55)
+            engine.play(.onDemand(reciterName: reciter.name, surah: s55, url: url))
+        }
+        let detail = ReciterDetailView(
+            reciter: reciter, favorites: favs, pool: pool, engine: engine,
+            surahs: surahs, tokens: noor, onBack: {}, play: { _, _, _ in })
+            .frame(width: 344).background(noor.bg)
+        let detailPath = "\(outDir)/reciter-detail.png"
+        if writePNG(detail, to: detailPath) { written.append(detailPath) }
     }
 
     private static func registerBundledFonts() {
