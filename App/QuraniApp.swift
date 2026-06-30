@@ -7,7 +7,7 @@ struct QuraniApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            GlassPanel(model: model, engine: model.engine)
+            GlassPanel(sources: model.sources, engine: model.engine)
                 .task { await model.bootstrap() }
         } label: {
             EqualizerMenuBarLabel(engine: model.engine)

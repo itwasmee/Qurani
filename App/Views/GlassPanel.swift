@@ -2,12 +2,17 @@ import SwiftUI
 import QuraniKit
 
 struct GlassPanel: View {
-    @ObservedObject var model: AppModel
-    @ObservedObject var engine: PlaybackEngine   // observed directly so the header reacts to playback
+    @ObservedObject var sources: SourcesStore
+    @ObservedObject var engine: PlaybackEngine
     @Environment(\.colorScheme) private var scheme
+    // Read the persisted theme directly here: @AppStorage is a reactive DynamicProperty,
+    // so changing it from the gear menu re-renders the panel LIVE. (An @AppStorage on
+    // AppModel — an ObservableObject — would NOT republish on change.)
+    @AppStorage("theme") private var themeRaw: String = Theme.system.rawValue
     @State private var tab = 0
 
-    private var resolved: ResolvedTheme { model.theme.resolved(systemIsDark: scheme == .dark) }
+    private var theme: Theme { Theme(rawValue: themeRaw) ?? .system }
+    private var resolved: ResolvedTheme { theme.resolved(systemIsDark: scheme == .dark) }
     private var tokens: Tokens { Tokens.of(resolved) }
 
     var body: some View {
@@ -18,7 +23,7 @@ struct GlassPanel: View {
                     Text("Qurani").font(.system(size: 13, weight: .semibold))
                 }
                 Spacer()
-                Image(systemName: "gearshape").font(.system(size: 15)).foregroundStyle(tokens.muted)
+                settingsMenu
             }
             .padding(.horizontal, 15).padding(.top, 13).padding(.bottom, 8)
             .foregroundStyle(tokens.text)
@@ -32,7 +37,7 @@ struct GlassPanel: View {
 
             Group {
                 if tab == 0 {
-                    LiveTabView(sources: model.sources, engine: engine, tokens: tokens)
+                    LiveTabView(sources: sources, engine: engine, tokens: tokens)
                 } else {
                     VStack(spacing: 6) {
                         Image(systemName: "sparkles").font(.system(size: 22)).foregroundStyle(tokens.muted)
@@ -54,6 +59,39 @@ struct GlassPanel: View {
                     .allowsHitTesting(false)
             }
         }
-        .preferredColorScheme(model.theme == .system ? nil : (model.theme == .sahar ? .light : .dark))
+        .preferredColorScheme(theme == .system ? nil : (resolved == .sahar ? .light : .dark))
+    }
+
+    // MARK: - Settings (theme + launch at login)
+
+    private var settingsMenu: some View {
+        Menu {
+            Picker("Theme", selection: $themeRaw) {
+                Text("System").tag(Theme.system.rawValue)
+                Text("Sahar (Light)").tag(Theme.sahar.rawValue)
+                Text("Noor (Dark)").tag(Theme.noor.rawValue)
+                Text("Layl (Night)").tag(Theme.layl.rawValue)
+            }
+            Divider()
+            Toggle("Launch at Login", isOn: launchAtLogin)
+        } label: {
+            Image(systemName: "gearshape").font(.system(size: 15)).foregroundStyle(tokens.muted)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+    }
+
+    /// Reads/writes the actual SMAppService state. `register()` throws from unsigned /
+    /// DerivedData builds — that's expected, so we swallow it (the toggle just reverts
+    /// on the next read). See LoginItem.
+    private var launchAtLogin: Binding<Bool> {
+        Binding(
+            get: { LoginItem.isEnabled },
+            set: { on in
+                do { try LoginItem.set(on) }
+                catch { print("Qurani: launch-at-login change failed (expected when unsigned): \(error)") }
+            }
+        )
     }
 }
