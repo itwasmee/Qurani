@@ -78,6 +78,9 @@ import QuraniKit
         // Explore tab (Noor): the reciter catalog + a reciter opened, one surah streaming.
         renderExplore(outDir: outDir, written: &written)
 
+        // Now-playing bar mid-on-demand (scrubber + mm:ss labels), both themes.
+        renderNowPlaying(outDir: outDir, written: &written)
+
         let log = written.isEmpty
             ? "Qurani snapshot: ImageRenderer produced no images (headless render unsupported).\n"
             : "Qurani snapshot wrote:\n" + written.joined(separator: "\n") + "\n"
@@ -137,6 +140,25 @@ import QuraniKit
             .frame(width: 344).background(noor.bg)
         let detailPath = "\(outDir)/reciter-detail.png"
         if writePNG(detail, to: detailPath) { written.append(detailPath) }
+    }
+
+    /// Renders the now-playing bar mid-on-demand in both Noor and Sahar: Ar-Rahman (55)
+    /// streaming with `elapsed 92s / duration 760s` → labels "1:32 / 12:40" and the
+    /// scrubber ~12% filled (`isLive == false`, so the draggable track shows).
+    private static func renderNowPlaying(outDir: String, written: inout [String]) {
+        let surahs = (try? QuranData.loadSurahs()) ?? []
+        guard let surah = surahs.first(where: { $0.number == 55 }) else { return }   // Ar-Rahman
+        let url = URL(string: "https://server.example/055.mp3")!
+        for (raw, theme) in [("noor", ResolvedTheme.noor), ("sahar", .sahar)] {
+            let player = SnapshotPlayer()
+            let engine = PlaybackEngine(player: player)
+            engine.play(.onDemand(reciterName: "Mishary Alafasy", surah: surah, url: url))
+            player.onTime?(92, 760)    // feed position through the engine → elapsed 1:32 of 12:40
+            let bar = NowPlayingBar(engine: engine, tokens: Tokens.of(theme))
+                .frame(width: 344).background(Tokens.of(theme).bg)
+            let path = "\(outDir)/nowplaying-\(raw).png"
+            if writePNG(bar, to: path) { written.append(path) }
+        }
     }
 
     private static func registerBundledFonts() {

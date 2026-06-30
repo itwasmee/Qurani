@@ -35,7 +35,10 @@ import Foundation
             self.status = .failed(reason)
         }
         self.player.onTime = { [weak self] el, du in
-            guard let self, var np = self.nowPlaying else { return }
+            // Only on-demand items have a meaningful position. A live stream's player still
+            // ticks ~2×/s; gating on `!isLive` keeps live elapsed/duration at 0 and avoids
+            // churning `@Published nowPlaying` (and the scrubber) for an open-ended stream.
+            guard let self, var np = self.nowPlaying, !np.isLive else { return }
             np.elapsed = el; np.duration = du; self.nowPlaying = np
         }
         self.player.onFinish = { [weak self] in self?.onFinish?() }

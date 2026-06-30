@@ -70,6 +70,9 @@ import QuraniKit
         // Live / not-yet-ready items report indefinite (NaN) or zero duration — seeking is
         // meaningless there, so ignore it rather than seek to NaN.
         guard total.isFinite, total > 0 else { return }
+        // `min`/`max` propagate NaN (NaN compares unordered), so a NaN fraction would slip
+        // through the clamp and produce a NaN seek time. Reject non-finite input up front.
+        guard f.isFinite else { return }
         let clamped = min(max(f, 0), 1)
         player.seek(to: CMTime(seconds: total * clamped, preferredTimescale: 600))
     }

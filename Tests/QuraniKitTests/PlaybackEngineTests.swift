@@ -131,6 +131,15 @@ let testSurah = Surah(number: 67, nameAr: "الْمُلْك", translit: "Al-Mulk
     #expect(e.nowPlaying?.elapsed == 12); #expect(e.nowPlaying?.duration == 60)
 }
 
+@MainActor @Test func liveStreamReportsNoProgress() {
+    let p = FakePlayer(); let e = PlaybackEngine(player: p)
+    e.playStation(Station(id: "x", name: "Makkah", region: "Makkah", kind: .hls,
+                          url: URL(string:"https://e/x.m3u8")!, reciter: nil, hasVideo: true))
+    p.onTime?(30, 0)                            // a live position tick must NOT churn nowPlaying
+    #expect(e.nowPlaying?.elapsed == 0)         // live keeps elapsed at 0 (no scrubber progress)
+    #expect(e.nowPlaying?.duration == 0)
+}
+
 @MainActor @Test func seekDelegatesFraction() {
     let p = FakePlayer(); let e = PlaybackEngine(player: p)
     e.play(.onDemand(reciterName: "R", surah: testSurah, url: URL(string:"https://e/1.mp3")!))

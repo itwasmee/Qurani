@@ -4,6 +4,10 @@ import QuraniKit
 struct NowPlayingBar: View {
     @ObservedObject var engine: PlaybackEngine
     let tokens: Tokens
+    /// Fraction (0…1) under the finger while scrubbing, so the thumb tracks the drag
+    /// immediately instead of waiting for the engine's next reported position. `nil` when
+    /// not dragging — the track then follows `nowPlaying.elapsed/duration`.
+    @State private var dragFraction: Double?
 
     private var isFailed: Bool { if case .failed = engine.status { return true } else { return false } }
 
@@ -48,6 +52,7 @@ struct NowPlayingBar: View {
     }
 
     @ViewBuilder private func playingBar(_ np: NowPlaying) -> some View {
+        VStack(spacing: 8) {
             HStack(spacing: 10) {
                 RoundedRectangle(cornerRadius: 9).fill(tokens.glassTint).frame(width: 34, height: 34)
                     .overlay(RoundedRectangle(cornerRadius: 9)
@@ -75,14 +80,62 @@ struct NowPlayingBar: View {
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.horizontal, 12).padding(.vertical, 9)
-            .background {
-                ZStack {
-                    VisualEffectBackground(material: .popover, blending: .behindWindow, isDark: tokens.isDark)
-                    tokens.glassTint
-                    tokens.bg.opacity(tokens.isDark ? 0.22 : 0.10)   // deepen the footer band
-                }
+            // On-demand items have a finite length → offer a draggable scrubber. Live keeps
+            // only the red LIVE pill (set above) and shows no progress control.
+            if !np.isLive, np.duration > 0 { scrubber(np) }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 9)
+        .background {
+            ZStack {
+                VisualEffectBackground(material: .popover, blending: .behindWindow, isDark: tokens.isDark)
+                tokens.glassTint
+                tokens.bg.opacity(tokens.isDark ? 0.22 : 0.10)   // deepen the footer band
             }
-            .overlay(alignment: .top) { Rectangle().fill(tokens.text.opacity(0.10)).frame(height: 1) }
+        }
+        .overlay(alignment: .top) { Rectangle().fill(tokens.text.opacity(0.10)).frame(height: 1) }
+    }
+
+    /// Thin, draggable progress track for on-demand playback. Dragging seeks the engine
+    /// live; `mm:ss` labels flank the track (elapsed on the left, total on the right).
+    @ViewBuilder private func scrubber(_ np: NowPlaying) -> some View {
+        let played = np.duration > 0 ? min(max(np.elapsed / np.duration, 0), 1) : 0
+        let fraction = dragFraction ?? played
+        HStack(spacing: 7) {
+            Text(Self.timeLabel(dragFraction.map { $0 * np.duration } ?? np.elapsed))
+                .font(.system(size: 9, weight: .medium).monospacedDigit())
+                .foregroundStyle(tokens.muted).fixedSize()
+            GeometryReader { geo in
+                let w = geo.size.width
+                ZStack(alignment: .leading) {
+                    Capsule().fill(tokens.text.opacity(0.15)).frame(height: 3)
+                    Capsule().fill(tokens.accent).frame(width: max(0, w * fraction), height: 3)
+                    Circle().fill(tokens.text).frame(width: 9, height: 9)
+                        .overlay(Circle().stroke(tokens.bg.opacity(0.25), lineWidth: 0.5))
+                        .offset(x: min(max(w * fraction - 4.5, 0), w - 9))
+                }
+                .frame(height: 12)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { v in
+                            let f = min(max(v.location.x / max(w, 1), 0), 1)
+                            dragFraction = f
+                            engine.seek(toFraction: f)
+                        }
+                        .onEnded { _ in dragFraction = nil }
+                )
+            }
+            .frame(height: 12)
+            Text(Self.timeLabel(np.duration))
+                .font(.system(size: 9, weight: .medium).monospacedDigit())
+                .foregroundStyle(tokens.muted).fixedSize()
+        }
+    }
+
+    /// `mm:ss` formatter for the scrubber labels (e.g. 92 → "1:32", 760 → "12:40").
+    private static func timeLabel(_ seconds: Double) -> String {
+        guard seconds.isFinite, seconds >= 0 else { return "0:00" }
+        let total = Int(seconds.rounded(.down))
+        return String(format: "%d:%02d", total / 60, total % 60)
     }
 }
