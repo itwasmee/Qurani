@@ -1,0 +1,24 @@
+name: Qurani
+options:
+  bundleIdPrefix: net.widev.qurani
+  deploymentTarget: { macOS: "26.0" }
+packages:
+  QuraniKit: { path: . }
+  KeyboardShortcuts: { url: https://github.com/sindresorhus/KeyboardShortcuts, from: "2.3.0" }
+targets:
+  Qurani:
+    type: application
+    platform: macOS
+    sources: [App]
+    dependencies:
+      - package: QuraniKit
+        product: QuraniKit
+      - package: KeyboardShortcuts
+    settings:
+      base:
+        INFOPLIST_FILE: App/Info.plist
+        CODE_SIGN_ENTITLEMENTS: App/Qurani.entitlements
+        PRODUCT_BUNDLE_IDENTIFIER: net.widev.qurani
+        SWIFT_VERSION: "6.0"
+        ENABLE_HARDENED_RUNTIME: YES
+        MARKETING_VERSION: "1.0"
