@@ -22,6 +22,9 @@ import Foundation
             np.surahHint = ICYMetadata.surahHint(from: title, surahs: self.surahs)
             self.nowPlaying = np
         }
+        self.player.onFailure = { [weak self] reason in
+            self?.status = .failed(reason)
+        }
     }
 
     public func attachSurahs(_ s: [Surah]) { surahs = s }
@@ -44,6 +47,11 @@ import Foundation
         case .paused, .idle: if current != nil { player.play() }
         default: break
         }
+    }
+
+    /// Re-attempt the current station after a failure (drives the now-playing retry tap).
+    public func retry() {
+        if let current { play(current) }
     }
 
     public func stop() {

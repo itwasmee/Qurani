@@ -4,28 +4,61 @@ import QuraniKit
 @MainActor final class AVAudioPlayerAdapter: NSObject, AudioPlayer, @preconcurrency AVPlayerItemMetadataOutputPushDelegate {
     var onStatus: ((Bool) -> Void)?
     var onStreamTitle: ((String) -> Void)?
+    var onFailure: ((String) -> Void)?
     var volume: Float = 1.0 { didSet { player.volume = volume } }
 
     private let player = AVPlayer()
     private var statusObservation: NSKeyValueObservation?
+    private var itemStatusObservation: NSKeyValueObservation?
+    private var connectTimeout: Task<Void, Never>?
+
+    /// If the stream hasn't begun playing within this window, treat it as a failure.
+    private let connectTimeoutSeconds: UInt64 = 15
 
     override init() {
         super.init()
         statusObservation = player.observe(\.timeControlStatus, options: [.new]) { [weak self] player, _ in
             let playing = player.timeControlStatus == .playing
-            Task { @MainActor in self?.onStatus?(playing) }
+            Task { @MainActor in
+                guard let self else { return }
+                if playing { self.connectTimeout?.cancel() }   // connected — disarm the watchdog
+                self.onStatus?(playing)
+            }
         }
     }
 
     func replace(url: URL) {
         let item = AVPlayerItem(url: url)
+        // Observe item.status for hard load failures. KVO fires on an arbitrary thread,
+        // so compute the Sendable reason String here, before hopping to the main actor
+        // (same race-safe shape as the timeControlStatus observation above).
+        itemStatusObservation = item.observe(\.status, options: [.new]) { [weak self] item, _ in
+            guard item.status == .failed else { return }
+            let reason = item.error?.localizedDescription ?? "Stream unavailable"
+            Task { @MainActor in self?.fail(reason) }
+        }
         let md = AVPlayerItemMetadataOutput(identifiers: nil)
         md.setDelegate(self, queue: .main)
         item.add(md)
         player.replaceCurrentItem(with: item)
+        armConnectTimeout()
     }
     func play() { player.play() }
-    func pause() { player.pause() }
+    func pause() { connectTimeout?.cancel(); player.pause() }
+
+    private func armConnectTimeout() {
+        connectTimeout?.cancel()
+        connectTimeout = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: (self?.connectTimeoutSeconds ?? 15) * 1_000_000_000)
+            guard let self, !Task.isCancelled, self.player.timeControlStatus != .playing else { return }
+            self.fail("Connection timed out")
+        }
+    }
+
+    private func fail(_ reason: String) {
+        connectTimeout?.cancel()
+        onFailure?(reason)
+    }
 
     // The metadata delegate queue is `.main` (see `replace`), so callbacks arrive on the main
     // actor. The `@preconcurrency` on the protocol conformance (above) lets this `@MainActor`

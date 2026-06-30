@@ -5,6 +5,7 @@ import Foundation
 @MainActor final class FakePlayer: AudioPlayer {
     var onStatus: ((Bool) -> Void)?
     var onStreamTitle: ((String) -> Void)?
+    var onFailure: ((String) -> Void)?
     var volume: Float = 1.0
     private(set) var lastURL: URL?
     private(set) var playCount = 0, pauseCount = 0
@@ -30,6 +31,14 @@ import Foundation
                         url: URL(string: "https://e.com/a")!, reciter: "Ghamdi", hasVideo: false))
     engine.toggle(); #expect(engine.status == .paused)
     engine.toggle(); #expect(engine.status == .playing)
+}
+
+@MainActor @Test func playerFailurePropagatesToFailedStatus() {
+    let p = FakePlayer(); let engine = PlaybackEngine(player: p)
+    engine.play(Station(id: "x", name: "Egypt", region: "Cairo", kind: .icecast,
+                        url: URL(string: "https://e.com/dead")!, reciter: nil, hasVideo: false))
+    p.onFailure?("boom")
+    #expect(engine.status == .failed("boom"))
 }
 
 @MainActor @Test func streamTitleUpdatesSurahHint() {
