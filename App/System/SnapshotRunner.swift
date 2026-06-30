@@ -53,7 +53,7 @@ import QuraniKit
             let sources = SourcesStore()
             sources.seed(featured: featured, reciterStations: reciters)
             let engine = PlaybackEngine(player: SnapshotPlayer())
-            if let first = featured.first { engine.play(first) }   // one station playing
+            if let first = featured.first { engine.playStation(first) }   // one station playing
             let panel = GlassPanel(sources: sources, engine: engine)
                 .environment(\.colorScheme, isDark ? .dark : .light)  // fallback if @AppStorage is unset
                 .background(Tokens.of(resolved).bg)                   // opaque backing for the vibrancy gap

@@ -3,14 +3,15 @@ import Foundation
 @MainActor public final class PlaybackEngine: ObservableObject {
     @Published public private(set) var status: PlayerStatus = .idle
     @Published public private(set) var nowPlaying: NowPlaying?
-    /// Identity of the station currently loaded, independent of display title.
-    /// Used to drive the row highlight (duplicate station names must not collide).
-    @Published public private(set) var currentStationID: String?
+    /// Identity of the item currently loaded, independent of display title.
+    /// Used to drive the row highlight (duplicate titles must not collide).
+    /// Format: `"live:<station.id>"` or `"ondemand:<reciterName>:<surahNumber>"`.
+    @Published public private(set) var currentSourceID: String?
     @Published public var volume: Float = 1.0 { didSet { player.volume = volume } }
 
     private let player: AudioPlayer
     private var surahs: [Surah] = []
-    private var current: Station?
+    private var current: PlaybackItem?
 
     public init(player: AudioPlayer) {
         self.player = player
@@ -24,26 +25,36 @@ import Foundation
         }
         self.player.onFailure = { [weak self] reason in
             // Ignore a late failure that arrives when nothing is loaded (e.g. after
-            // `stop()`/idle): without a current station it would strand the UI in
+            // `stop()`/idle): without a current item it would strand the UI in
             // `.failed` with `nowPlaying == nil`.
-            guard let self, self.currentStationID != nil else { return }
+            guard let self, self.currentSourceID != nil else { return }
             self.status = .failed(reason)
         }
     }
 
     public func attachSurahs(_ s: [Surah]) { surahs = s }
 
-    public func play(_ station: Station) {
-        current = station
-        currentStationID = station.id
+    public func play(_ item: PlaybackItem) {
+        current = item
+        currentSourceID = item.sourceID
         status = .loading
-        nowPlaying = NowPlaying(title: station.name,
-                                subtitle: station.reciter ?? station.region,
-                                isLive: true, surahHint: nil)
-        player.replace(url: station.url)
+        switch item {
+        case .liveStation(let station):
+            nowPlaying = NowPlaying(title: station.name,
+                                    subtitle: station.reciter ?? station.region,
+                                    isLive: true, surahHint: nil)
+        case .onDemand(let reciterName, let surah, _):
+            nowPlaying = NowPlaying(title: surah.nameAr,
+                                    subtitle: reciterName,
+                                    isLive: false, surahHint: nil)
+        }
+        player.replace(url: item.url)
         player.volume = volume
         player.play()
     }
+
+    /// Convenience for live-radio playback — preserves the pre-Plan-2 call shape.
+    public func playStation(_ s: Station) { play(.liveStation(s)) }
 
     public func toggle() {
         switch status {
@@ -53,7 +64,7 @@ import Foundation
         }
     }
 
-    /// Re-attempt the current station after a failure (drives the now-playing retry tap).
+    /// Re-attempt the current item after a failure (drives the now-playing retry tap).
     public func retry() {
         if let current { play(current) }
     }
@@ -63,6 +74,6 @@ import Foundation
         status = .idle
         nowPlaying = nil
         current = nil
-        currentStationID = nil
+        currentSourceID = nil
     }
 }

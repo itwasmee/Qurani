@@ -21,7 +21,7 @@ import Foundation
     let p = FakePlayer(); let engine = PlaybackEngine(player: p)
     let st = Station(id: "x", name: "Makkah — Al-Haram", region: "Makkah", kind: .hls,
                      url: URL(string: "https://example.com/x.m3u8")!, reciter: nil, hasVideo: true)
-    engine.play(st)
+    engine.playStation(st)
     #expect(p.lastURL?.absoluteString == "https://example.com/x.m3u8")
     #expect(engine.status == .playing)
     #expect(engine.nowPlaying?.title == "Makkah — Al-Haram")
@@ -30,7 +30,7 @@ import Foundation
 
 @MainActor @Test func togglePausesAndResumes() {
     let p = FakePlayer(); let engine = PlaybackEngine(player: p)
-    engine.play(Station(id: "x", name: "n", region: "r", kind: .icecast,
+    engine.playStation(Station(id: "x", name: "n", region: "r", kind: .icecast,
                         url: URL(string: "https://e.com/a")!, reciter: "Ghamdi", hasVideo: false))
     engine.toggle(); #expect(engine.status == .paused)
     engine.toggle(); #expect(engine.status == .playing)
@@ -41,22 +41,22 @@ import Foundation
     let engine = PlaybackEngine(player: p)
     let st = Station(id: "x", name: "Makkah", region: "Makkah", kind: .hls,
                      url: URL(string: "https://e.com/x.m3u8")!, reciter: nil, hasVideo: true)
-    engine.play(st)
+    engine.playStation(st)
     #expect(engine.status == .loading)             // observable: player hasn't confirmed yet
-    #expect(engine.currentStationID == "x")
+    #expect(engine.currentSourceID == "live:x")
     p.onStatus?(true)
     #expect(engine.status == .playing)
 }
 
 @MainActor @Test func stopResetsStatusNowPlayingAndStation() {
     let p = FakePlayer(); let engine = PlaybackEngine(player: p)
-    engine.play(Station(id: "x", name: "n", region: "r", kind: .icecast,
+    engine.playStation(Station(id: "x", name: "n", region: "r", kind: .icecast,
                         url: URL(string: "https://e.com/a")!, reciter: "G", hasVideo: false))
     #expect(engine.nowPlaying != nil)
     engine.stop()
     #expect(engine.status == .idle)
     #expect(engine.nowPlaying == nil)
-    #expect(engine.currentStationID == nil)
+    #expect(engine.currentSourceID == nil)
     #expect(p.pauseCount == 1)
 }
 
@@ -64,14 +64,14 @@ import Foundation
     let p = FakePlayer(); let engine = PlaybackEngine(player: p)
     engine.volume = 0.3
     #expect(p.volume == 0.3)
-    engine.play(Station(id: "x", name: "n", region: "r", kind: .icecast,
+    engine.playStation(Station(id: "x", name: "n", region: "r", kind: .icecast,
                         url: URL(string: "https://e.com/a")!, reciter: nil, hasVideo: false))
     #expect(p.volume == 0.3)                       // play() re-applies the engine volume
 }
 
 @MainActor @Test func playerFailurePropagatesToFailedStatus() {
     let p = FakePlayer(); let engine = PlaybackEngine(player: p)
-    engine.play(Station(id: "x", name: "Egypt", region: "Cairo", kind: .icecast,
+    engine.playStation(Station(id: "x", name: "Egypt", region: "Cairo", kind: .icecast,
                         url: URL(string: "https://e.com/dead")!, reciter: nil, hasVideo: false))
     p.onFailure?("boom")
     #expect(engine.status == .failed("boom"))
@@ -79,7 +79,7 @@ import Foundation
 
 @MainActor @Test func lateFailureWhenIdleIsIgnored() {
     let p = FakePlayer(); let engine = PlaybackEngine(player: p)
-    engine.play(Station(id: "x", name: "Egypt", region: "Cairo", kind: .icecast,
+    engine.playStation(Station(id: "x", name: "Egypt", region: "Cairo", kind: .icecast,
                         url: URL(string: "https://e.com/dead")!, reciter: nil, hasVideo: false))
     engine.stop()
     p.onFailure?("boom")                 // late failure after stop()/idle must be a no-op
@@ -90,8 +90,28 @@ import Foundation
 @MainActor @Test func streamTitleUpdatesSurahHint() {
     let p = FakePlayer(); let engine = PlaybackEngine(player: p)
     engine.attachSurahs([Surah(number: 67, nameAr: "الْمُلْك", translit: "Al-Mulk", nameEn: "", ayahCount: 30, makki: true, juz: 29)])
-    engine.play(Station(id: "x", name: "n", region: "r", kind: .icecast,
+    engine.playStation(Station(id: "x", name: "n", region: "r", kind: .icecast,
                         url: URL(string: "https://e.com/a")!, reciter: "Sudais", hasVideo: false))
     p.onStreamTitle?("Sudais - Al-Mulk")
     #expect(engine.nowPlaying?.surahHint == "الْمُلْك")
+}
+
+@MainActor @Test func playsOnDemandItem() {
+    let p = FakePlayer(); let e = PlaybackEngine(player: p)
+    let s = Surah(number: 67, nameAr: "الْمُلْك", translit: "Al-Mulk", nameEn: "", ayahCount: 30, makki: true, juz: 29)
+    let url = URL(string: "https://server.example/067.mp3")!
+    e.play(.onDemand(reciterName: "Sudais", surah: s, url: url))
+    #expect(p.lastURL == url)
+    #expect(e.nowPlaying?.title == "الْمُلْك")
+    #expect(e.nowPlaying?.subtitle == "Sudais")
+    #expect(e.nowPlaying?.isLive == false)
+    #expect(e.currentSourceID == "ondemand:Sudais:67")
+}
+
+@MainActor @Test func stationStillPlaysViaConvenience() {
+    let p = FakePlayer(); let e = PlaybackEngine(player: p)
+    let st = Station(id: "x", name: "Makkah", region: "Makkah", kind: .hls, url: URL(string:"https://e/x.m3u8")!, reciter: nil, hasVideo: true)
+    e.playStation(st)
+    #expect(e.currentSourceID == "live:x")
+    #expect(e.nowPlaying?.isLive == true)
 }
