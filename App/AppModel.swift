@@ -64,7 +64,25 @@ import QuraniKit
         surahs = (try? QuranData.loadSurahs()) ?? []
         engine.attachSurahs(surahs)
         importer.surahs = surahs
-        importer.startWatching()   // best-effort; a no-op until a library folder is granted
+
+        // Wire the two Settings toggles to their system effects. A `@Published` replays its current
+        // value to each new sink on subscription (the same CurrentValueSubject semantics the
+        // `engine.$nowPlaying` sink in `init` relies on to seed itself), so subscribing here both
+        // applies the persisted state immediately and re-applies it on every later toggle — no
+        // separate initial call needed. Subscribed inside the one-shot guard so a re-fired
+        // `bootstrap()` (it runs from `.task{}`) can't stack duplicate sinks.
+        settings.$mediaKeysEnabled
+            .sink { [bridge] on in bridge.setMediaKeysEnabled(on) }
+            .store(in: &cancellables)
+        // Auto-import: arm / disarm the watched-folder DispatchSource. `startWatching()` self-guards
+        // on a granted folder bookmark (best-effort — a no-op until the user picks a folder); toggling
+        // off cancels the watch.
+        settings.$autoImportEnabled
+            .sink { [importer] on in
+                if on { importer.startWatching() } else { importer.stopWatching() }
+            }
+            .store(in: &cancellables)
+
         try? sources.loadFeatured()
         await sources.loadReciterStations { try await SourcesStore.fetchRadios() }
         await catalog.load { try await CatalogStore.fetchReciters() }

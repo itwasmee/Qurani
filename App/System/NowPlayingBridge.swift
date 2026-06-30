@@ -22,6 +22,20 @@ import QuraniKit
             return .success
         }
     }
+
+    /// Gate the hardware media keys / Control Center transport on the Settings "Media keys" toggle.
+    /// The command *targets* stay registered (added once in `init`); flipping `.isEnabled` is the
+    /// documented way to make the system ignore — and grey out — the play/pause commands without
+    /// re-adding handlers, and toggling back on re-arms them. `MPNowPlayingInfoCenter` (the `update`
+    /// / `updatePlaybackState` metadata below) is deliberately untouched, so the lock screen and
+    /// Control Center keep *showing* what's playing even while the keys don't control it.
+    func setMediaKeysEnabled(_ on: Bool) {
+        let c = MPRemoteCommandCenter.shared()
+        c.playCommand.isEnabled = on
+        c.pauseCommand.isEnabled = on
+        c.togglePlayPauseCommand.isEnabled = on
+    }
+
     /// Reflect the just-emitted now-playing value. `@Published` fires in `willSet`,
     /// so callers must pass the *new* value — re-reading `engine.nowPlaying` here would
     /// observe the pre-change value (nil on first play, stale on stop).

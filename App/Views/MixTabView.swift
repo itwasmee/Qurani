@@ -8,9 +8,12 @@ import QuraniKit
 ///
 /// Observes `catalog`/`favorites`/`pool`/`library` directly (derived from `model`) so the candidate
 /// list and selection republish — `AppModel` does not forward its child stores' changes (same lesson
-/// as Explore / Library). On-demand selection seeds from the persisted Mix pool; local selection is
-/// session-scoped (the library has no persisted pool to seed from). `model.isMixing` swaps in a
-/// placeholder until Task 5 fills the playing/queue UI.
+/// as Explore / Library). **On-demand selection *is* the persisted Mix pool**: ticking a ☁︎ row writes
+/// straight through to `MixPoolStore` (so it survives relaunch and is the same membership Explore's
+/// "add to pool" edits). Local 📚 picks stay session-scoped — v1 has no persisted local pool, so they
+/// reset each launch. Phantom entries (a pooled id the catalog no longer lists, or a local name whose
+/// files were removed) are reconciled away before the POOL count / build. `model.isMixing` swaps in
+/// the playing/queue UI.
 struct MixTabView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var catalog: CatalogStore
@@ -19,10 +22,9 @@ struct MixTabView: View {
     @ObservedObject var library: LibraryStore
     let tokens: Tokens
 
-    /// Local reciter names ticked into the pool (session-scoped — starts empty).
+    /// Local reciter names ticked into the pool (session-scoped — starts empty). On-demand picks are
+    /// not held here: they live in the persisted `model.pool` and are read/written through it.
     @State private var selectedLocal: Set<String> = []
-    /// On-demand reciter ids ticked into the pool, seeded from the persisted Mix pool.
-    @State private var selectedOnDemand: Set<Int>
     @State private var order: MixConfig.Order = .shuffle
     @State private var rangeMode: RangeMode = .full
     @State private var juz = 1
@@ -40,7 +42,6 @@ struct MixTabView: View {
         _pool = ObservedObject(wrappedValue: model.pool)
         _library = ObservedObject(wrappedValue: model.library)
         self.tokens = tokens
-        _selectedOnDemand = State(initialValue: model.pool.reciterIDs)
     }
 
     var body: some View {
@@ -99,7 +100,7 @@ struct MixTabView: View {
                             tokens: tokens) { toggleLocal(name) }
                 }
                 ForEach(onDemandCandidates) { r in
-                    PoolRow(name: r.name, source: .onDemand, selected: selectedOnDemand.contains(r.id),
+                    PoolRow(name: r.name, source: .onDemand, selected: pool.contains(r.id),
                             tokens: tokens) { toggleOnDemand(r.id) }
                 }
             }
@@ -311,13 +312,22 @@ struct MixTabView: View {
     }
 
     private var hasCandidates: Bool { !localCandidates.isEmpty || !onDemandCandidates.isEmpty }
-    private var selectedCount: Int { selectedLocal.count + selectedOnDemand.count }
-    private var selectionEmpty: Bool { selectedLocal.isEmpty && selectedOnDemand.isEmpty }
+
+    /// The persisted on-demand pool reconciled against the loaded catalog — a pooled id whose reciter
+    /// the catalog no longer lists (reshaped, or not yet loaded) is a phantom, dropped so neither the
+    /// POOL count nor the built pool references a vanished reciter.
+    private var validOnDemand: Set<Int> { pool.reciterIDs.intersection(catalog.reciters.map(\.id)) }
+    /// Session-picked local names reconciled against the current library groups — a name whose files
+    /// have all been removed since it was ticked is dropped likewise.
+    private var validLocal: Set<String> { selectedLocal.intersection(localCandidates) }
+
+    private var selectedCount: Int { validLocal.count + validOnDemand.count }
+    private var selectionEmpty: Bool { validLocal.isEmpty && validOnDemand.isEmpty }
 
     private var allSelected: Bool {
         hasCandidates
             && localCandidates.allSatisfy(selectedLocal.contains)
-            && onDemandCandidates.allSatisfy { selectedOnDemand.contains($0.id) }
+            && onDemandCandidates.allSatisfy { pool.contains($0.id) }
     }
 
     private var onAccent: Color { tokens.isDark ? Color(hex: 0x05291f) : .white }
@@ -334,22 +344,25 @@ struct MixTabView: View {
         if selectedLocal.contains(name) { selectedLocal.remove(name) } else { selectedLocal.insert(name) }
     }
 
+    /// Ticking an on-demand reciter writes through to the persisted pool (same store + semantics as
+    /// Explore's "add to pool"), so the choice survives relaunch instead of living in view `@State`.
     private func toggleOnDemand(_ id: Int) {
-        if selectedOnDemand.contains(id) { selectedOnDemand.remove(id) } else { selectedOnDemand.insert(id) }
+        model.pool.toggle(reciter: id)
     }
 
     private func toggleSelectAll() {
         if allSelected {
-            selectedLocal.removeAll(); selectedOnDemand.removeAll()
+            selectedLocal.removeAll()
+            for r in onDemandCandidates where pool.contains(r.id) { model.pool.toggle(reciter: r.id) }
         } else {
             selectedLocal = Set(localCandidates)
-            selectedOnDemand = Set(onDemandCandidates.map(\.id))
+            for r in onDemandCandidates where !pool.contains(r.id) { model.pool.toggle(reciter: r.id) }
         }
     }
 
     private func start() {
         let config = MixConfig(order: order, range: resolvedRange)
-        let builtPool = model.buildPool(onDemandIDs: selectedOnDemand, localNames: selectedLocal)
+        let builtPool = model.buildPool(onDemandIDs: validOnDemand, localNames: validLocal)
         model.startMix(config: config, pool: builtPool)
     }
 }
