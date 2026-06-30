@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import QuraniKit
 
 struct GlassPanel: View {
@@ -35,7 +36,10 @@ struct GlassPanel: View {
                     Text("Qurani").font(.system(size: 13, weight: .semibold))
                 }
                 Spacer()
-                settingsMenu
+                HStack(spacing: 8) {
+                    commandsMenu
+                    settingsMenu
+                }
             }
             .padding(.horizontal, 15).padding(.top, 13).padding(.bottom, 8)
             .foregroundStyle(tokens.text)
@@ -87,6 +91,35 @@ struct GlassPanel: View {
             }
         }
         .preferredColorScheme(theme == .system ? nil : (resolved == .sahar ? .light : .dark))
+    }
+
+    // MARK: - Commands (the menubar-icon context menu, relocated)
+
+    /// The mockup puts these on a right-click of the menubar icon, but a
+    /// `MenuBarExtra(.menuBarExtraStyle(.window))` icon has no native right-click menu — a click
+    /// is reserved for opening this panel. So the commands live here as a `•••` header menu beside
+    /// the gear, which stays grouped as theme + launch-at-login. Observes `engine` (via the
+    /// view's `@ObservedObject`), so the Play/Pause label tracks playback live.
+    private var commandsMenu: some View {
+        Menu {
+            Button("Add Files to Library…") { importer.addFilesPanel() }
+            Button("Reveal Library Folder") {
+                NSWorkspace.shared.activateFileViewerSelecting([importer.libraryFolderURL])
+            }
+            Divider()
+            Button(engine.status == .playing ? "Pause" : "Play") { engine.toggle() }
+            Divider()
+            // Settings… is a stub — the full preferences window arrives in Plan 5. Disabled so it
+            // reads as "coming soon" rather than a dead no-op (theme + login already live in the gear).
+            Button("Settings…") {}.disabled(true)
+            Button("Quit Qurani") { NSApplication.shared.terminate(nil) }
+                .keyboardShortcut("q")
+        } label: {
+            Image(systemName: "ellipsis.circle").font(.system(size: 15)).foregroundStyle(tokens.muted)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
     }
 
     // MARK: - Settings (theme + launch at login)
