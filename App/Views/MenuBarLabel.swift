@@ -32,7 +32,16 @@ struct MenuBarLabel: View {
 
 /// Observes the engine so the menubar icon animates when playback starts/stops
 /// even while the panel is closed (`AppModel` does not republish engine changes).
+///
+/// Uses an SF Symbol (a template image), NOT the custom `MenuBarLabel` shape:
+/// `MenuBarExtra` renders custom SwiftUI label views unreliably (they can come up
+/// blank/clipped in the menubar), whereas a symbol always shows and auto-adapts to
+/// the light/dark menubar. The custom bars are still used inside the glass panel.
 struct EqualizerMenuBarLabel: View {
     @ObservedObject var engine: PlaybackEngine
-    var body: some View { MenuBarLabel(isPlaying: engine.status == .playing) }
+    private var isPlaying: Bool { engine.status == .playing }
+    var body: some View {
+        Image(systemName: "waveform")
+            .symbolEffect(.variableColor.iterative.dimInactiveLayers, isActive: isPlaying)
+    }
 }
