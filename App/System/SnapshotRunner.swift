@@ -19,8 +19,12 @@ import QuraniKit
 }
 
 /// Debug-only: when the app is launched with `--snapshot <outdir>`, render PNGs of the
-/// real SwiftUI (via CoreGraphics `ImageRenderer`, no WindowServer needed) and exit(0)
-/// before any window is shown. Vibrancy won't appear — layout / fonts / tokens will.
+/// real SwiftUI (via an offscreen `NSHostingView`, no visible window needed) and exit(0)
+/// before any window is shown. Vibrancy + NSSwitch won't appear — layout / fonts / tokens will.
+///
+/// Every reviewable surface renders in BOTH shipped themes (Noor dark + Sahar light) so the
+/// controller can compare each screen against the mockups side by side. Filenames are
+/// `<screen>-<theme>.png` (e.g. `live-noor.png` / `library-sahar.png`).
 @MainActor enum SnapshotRunner {
     /// `--snapshot <dir>` → returns the output directory, or nil if absent.
     static func requestedOutputDir() -> String? {
@@ -28,6 +32,10 @@ import QuraniKit
         guard let i = args.firstIndex(of: "--snapshot"), i + 1 < args.count else { return nil }
         return args[i + 1]
     }
+
+    /// The two shipped themes the controller reviews — every surface renders in both.
+    private static let themes: [(raw: String, theme: ResolvedTheme, isDark: Bool)] =
+        [("noor", .noor, true), ("sahar", .sahar, false)]
 
     private static let reciterJSON = #"""
     {"radios":[
@@ -47,6 +55,7 @@ import QuraniKit
 
         let featured = (try? CuratedStations.load()) ?? []
         let reciters = (try? RadiosService.decode(reciterJSON)) ?? []
+        let surahs = (try? QuranData.loadSurahs()) ?? []
         var written: [String] = []
 
         // A throwaway root model that satisfies GlassPanel's initializer (Live-tab panels) and backs
@@ -56,72 +65,97 @@ import QuraniKit
         let snapshotTmp = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let snapshotModel = AppModel(storesDirectory: snapshotTmp)
 
-        // GlassPanel in both Noor (dark) and Sahar (light), Makkah playing.
-        for (raw, isDark) in [("noor", true), ("sahar", false)] {
+        // Full GlassPanel on the Live tab, in both themes (Makkah playing). This is rendered before any
+        // `seedMix` flips `snapshotModel.isMixing`, so its now-playing bar shows the live station cleanly.
+        renderLive(model: snapshotModel, outDir: outDir, featured: featured, reciterStations: reciters,
+                   surahs: surahs, written: &written)
+
+        // SurahNameView sample (Amiri + medallion), both themes.
+        renderSurahName(outDir: outDir, written: &written)
+
+        // Explore (catalog list + a reciter opened, one surah streaming), both themes.
+        renderExplore(outDir: outDir, surahs: surahs, written: &written)
+
+        // Library tab (reciters grouped, durations, one local file playing), both themes.
+        renderLibrary(outDir: outDir, surahs: surahs, written: &written)
+
+        // Tagger review sheet (four pending imports), both themes.
+        renderTaggerReview(outDir: outDir, surahs: surahs, written: &written)
+
+        // Settings screen (theme swatches, hotkey recorder, toggles, library, about), both themes.
+        renderSettings(outDir: outDir, written: &written)
+
+        // Now-playing bar — every variant (live / on-demand / mix) in both themes.
+        renderNowPlaying(outDir: outDir, surahs: surahs, written: &written)
+
+        // Mix tab — build panel + playing queue, both themes. Last, because `seedMix` flips
+        // `snapshotModel.isMixing` (used above by the Live GlassPanel's now-playing chip).
+        renderMix(model: snapshotModel, outDir: outDir, surahs: surahs, written: &written)
+
+        let log = written.isEmpty
+            ? "Qurani snapshot: produced no images (headless render unsupported).\n"
+            : "Qurani snapshot wrote \(written.count) images:\n" + written.joined(separator: "\n") + "\n"
+        FileHandle.standardError.write(Data(log.utf8))
+        // Surface the output directory for the controller, regardless of count.
+        FileHandle.standardError.write(Data("Qurani snapshot dir: \(outDir)\n".utf8))
+        exit(0)
+    }
+
+    // MARK: - Live (full GlassPanel)
+
+    /// The whole panel on the Live tab in both themes — header chrome, the segmented control, the
+    /// Live station list, and the now-playing bar with the first featured station playing. Each theme
+    /// sets `@AppStorage("theme")` first (GlassPanel reads it) and gets a fresh sources/engine/library
+    /// so the highlighted row reaches `.playing` without audio.
+    private static func renderLive(model: AppModel, outDir: String, featured: [Station],
+                                   reciterStations: [Station], surahs: [Surah], written: inout [String]) {
+        let fm = FileManager.default
+        for (raw, theme, isDark) in themes {
             UserDefaults.standard.set(raw, forKey: "theme")     // drives GlassPanel's @AppStorage
-            let resolved = (Theme(rawValue: raw) ?? .system).resolved(systemIsDark: isDark)
+            let tokens = Tokens.of(theme)
             let sources = SourcesStore()
-            sources.seed(featured: featured, reciterStations: reciters)
+            sources.seed(featured: featured, reciterStations: reciterStations)
             let engine = PlaybackEngine(player: SnapshotPlayer())
             if let first = featured.first { engine.playStation(first) }   // one station playing
             let tmp = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             let library = LibraryStore(directory: tmp)
-            let panel = GlassPanel(model: snapshotModel, sources: sources, engine: engine,
+            let panel = GlassPanel(model: model, sources: sources, engine: engine,
                                    catalog: CatalogStore(), favorites: FavoritesStore(directory: tmp),
                                    pool: MixPoolStore(directory: tmp),
                                    library: library, importer: LibraryImporter(library: library),
                                    settings: SettingsStore(directory: tmp),
-                                   surahs: [],
+                                   surahs: surahs,
                                    play: { _, _, _ in }, playLocal: { _ in },
-                                   commitImports: { _ in })   // Live tab shown; others unused here
+                                   commitImports: { _ in })   // Live tab shown; other tabs unused here
                 .environment(\.colorScheme, isDark ? .dark : .light)  // fallback if @AppStorage is unset
-                .background(Tokens.of(resolved).bg)                   // opaque backing for the vibrancy gap
-            let path = "\(outDir)/panel-\(raw).png"
+                .background(tokens.bg)                                 // opaque backing for the vibrancy gap
+            let path = "\(outDir)/live-\(raw).png"
             if writePNG(panel, to: path) { written.append(path) }
         }
-
-        // SurahNameView sample (Amiri + medallion).
-        let surah = SurahNameView(number: 67, nameAr: "الْمُلْك", translit: "Al-Mulk",
-                                  tokens: Tokens.of(.noor), playing: true)
-            .padding(22).frame(width: 320).background(Tokens.of(.noor).bg)
-        let surahPath = "\(outDir)/surah-name.png"
-        if writePNG(surah, to: surahPath) { written.append(surahPath) }
-
-        // Explore tab (Noor): the reciter catalog + a reciter opened, one surah streaming.
-        renderExplore(outDir: outDir, written: &written)
-
-        // Library tab (Noor): three reciters grouped, a few surahs each, one local file playing.
-        renderLibrary(outDir: outDir, written: &written)
-
-        // Tagger review sheet (Noor): four pending imports — one high-confidence ✓, one amber
-        // (blank reciter, low-confidence guess).
-        renderTaggerReview(outDir: outDir, written: &written)
-
-        // Settings screen (Noor): the full preferences overlay — theme swatches, hotkey recorder,
-        // toggles, library folder, launch-at-login, about.
-        renderSettings(outDir: outDir, written: &written)
-
-        // Now-playing bar mid-on-demand (scrubber + mm:ss labels), both themes.
-        renderNowPlaying(outDir: outDir, written: &written)
-
-        // Mix tab (Noor): the build panel (seeded pool candidates) + the playing queue (a seeded
-        // session via `seedMix`, the first row highlighted). Reuses `snapshotModel` (tmp-dir stores).
-        renderMix(model: snapshotModel, outDir: outDir, written: &written)
-
-        let log = written.isEmpty
-            ? "Qurani snapshot: ImageRenderer produced no images (headless render unsupported).\n"
-            : "Qurani snapshot wrote:\n" + written.joined(separator: "\n") + "\n"
-        FileHandle.standardError.write(Data(log.utf8))
-        exit(0)
     }
 
-    /// Renders the two Explore surfaces in Noor: the reciter catalog (`explore-list.png`)
-    /// and a reciter opened with one surah streaming (`reciter-detail.png`). Uses seeded
-    /// sample reciters + the real surah list, and a `SnapshotPlayer` so the highlighted row
-    /// reaches `.playing` without audio or a network.
-    private static func renderExplore(outDir: String, written: inout [String]) {
-        let noor = Tokens.of(.noor)
-        let surahs = (try? QuranData.loadSurahs()) ?? []
+    // MARK: - SurahNameView sample
+
+    private static func renderSurahName(outDir: String, written: inout [String]) {
+        for (raw, theme, isDark) in themes {
+            let tokens = Tokens.of(theme)
+            let surah = SurahNameView(number: 67, nameAr: "الْمُلْك", translit: "Al-Mulk",
+                                      tokens: tokens, playing: true)
+                .padding(22).frame(width: 320)
+                .environment(\.colorScheme, isDark ? .dark : .light)
+                .background(tokens.bg)
+            let path = "\(outDir)/surah-name-\(raw).png"
+            if writePNG(surah, to: path) { written.append(path) }
+        }
+    }
+
+    // MARK: - Explore (catalog list + reciter detail)
+
+    /// Renders the two Explore surfaces in both themes: the reciter catalog (`explore-list-<theme>.png`)
+    /// and a reciter opened with one surah streaming (`reciter-detail-<theme>.png`). Uses seeded sample
+    /// reciters + the real surah list, and a `SnapshotPlayer` so the highlighted row reaches `.playing`
+    /// without audio or a network.
+    private static func renderExplore(outDir: String, surahs: [Surah], written: inout [String]) {
         let base = URL(string: "https://server.example/")!
         func moshaf(_ id: Int, _ name: String, _ nums: [Int]) -> Moshaf {
             Moshaf(id: id, name: name, serverBase: base, surahNumbers: nums)
@@ -139,148 +173,201 @@ import QuraniKit
             Reciter(id: 4, name: "Yasser Al-Dossari", moshafs: [moshaf(6, "Hafs", [1, 2, 67])]),
             Reciter(id: 5, name: "Saad Al-Ghamdi", moshafs: [moshaf(7, "Hafs", [1, 55, 112])]),
         ]
-        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
 
-        // A: reciter catalog — one reciter already added to the Mix pool (✓).
-        let catalog = CatalogStore(); catalog.seed(reciters: reciters)
-        let listPool = MixPoolStore(directory: tmp); listPool.toggle(reciter: 2)
-        let list = ExploreTabView(
-            catalog: catalog, favorites: FavoritesStore(directory: tmp), pool: listPool,
-            engine: PlaybackEngine(player: SnapshotPlayer()), surahs: surahs,
-            tokens: noor, play: { _, _, _ in })
-            .frame(width: 344).background(noor.bg)
-        let listPath = "\(outDir)/explore-list.png"
-        if writePNG(list, to: listPath) { written.append(listPath) }
+        for (raw, theme, isDark) in themes {
+            let tokens = Tokens.of(theme)
+            let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
 
-        // B: reciter detail — favorited + pooled, Ar-Rahman (55) streaming on demand.
-        let reciter = reciters[0]
-        let favs = FavoritesStore(directory: tmp); favs.toggle(reciter: reciter.id)
-        let pool = MixPoolStore(directory: tmp); pool.toggle(reciter: reciter.id)
-        let engine = PlaybackEngine(player: SnapshotPlayer()); engine.attachSurahs(surahs)
-        if let s55 = surahs.first(where: { $0.number == 55 }) {
-            let url = CatalogService.audioURL(serverBase: reciter.moshafs[0].serverBase, surah: 55)
-            engine.play(.onDemand(reciterID: reciter.id, reciterName: reciter.name,
-                                  moshafID: reciter.moshafs[0].id, surah: s55, url: url))
+            // A: reciter catalog — one reciter already added to the Mix pool (✓).
+            let catalog = CatalogStore(); catalog.seed(reciters: reciters)
+            let listPool = MixPoolStore(directory: tmp); listPool.toggle(reciter: 2)
+            let list = ExploreTabView(
+                catalog: catalog, favorites: FavoritesStore(directory: tmp), pool: listPool,
+                engine: PlaybackEngine(player: SnapshotPlayer()), surahs: surahs,
+                tokens: tokens, play: { _, _, _ in })
+                .frame(width: 344)
+                .environment(\.colorScheme, isDark ? .dark : .light).background(tokens.bg)
+            let listPath = "\(outDir)/explore-list-\(raw).png"
+            if writePNG(list, to: listPath) { written.append(listPath) }
+
+            // B: reciter detail — favorited + pooled, Ar-Rahman (55) streaming on demand.
+            let reciter = reciters[0]
+            let favs = FavoritesStore(directory: tmp); favs.toggle(reciter: reciter.id)
+            let pool = MixPoolStore(directory: tmp); pool.toggle(reciter: reciter.id)
+            let engine = PlaybackEngine(player: SnapshotPlayer()); engine.attachSurahs(surahs)
+            if let s55 = surahs.first(where: { $0.number == 55 }) {
+                let url = CatalogService.audioURL(serverBase: reciter.moshafs[0].serverBase, surah: 55)
+                engine.play(.onDemand(reciterID: reciter.id, reciterName: reciter.name,
+                                      moshafID: reciter.moshafs[0].id, surah: s55, url: url))
+            }
+            let detail = ReciterDetailView(
+                reciter: reciter, favorites: favs, pool: pool, engine: engine,
+                surahs: surahs, tokens: tokens, onBack: {}, play: { _, _, _ in })
+                .frame(width: 344)
+                .environment(\.colorScheme, isDark ? .dark : .light).background(tokens.bg)
+            let detailPath = "\(outDir)/reciter-detail-\(raw).png"
+            if writePNG(detail, to: detailPath) { written.append(detailPath) }
         }
-        let detail = ReciterDetailView(
-            reciter: reciter, favorites: favs, pool: pool, engine: engine,
-            surahs: surahs, tokens: noor, onBack: {}, play: { _, _, _ in })
-            .frame(width: 344).background(noor.bg)
-        let detailPath = "\(outDir)/reciter-detail.png"
-        if writePNG(detail, to: detailPath) { written.append(detailPath) }
     }
 
-    /// Renders the Library tab in Noor: three reciters grouped (Style-B surah rows with durations),
-    /// the first group's first surah playing (highlighted) via a `SnapshotPlayer`. Synthetic `Data()`
-    /// bookmarks never resolve, but the snapshot only displays + matches the source id — it never
-    /// plays real audio. Durations mirror the mockup (18:02 / 38:12 / 12:40).
-    private static func renderLibrary(outDir: String, written: inout [String]) {
-        let noor = Tokens.of(.noor)
-        let surahs = (try? QuranData.loadSurahs()) ?? []
-        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let library = LibraryStore(directory: tmp)
+    // MARK: - Library
+
+    /// Renders the Library tab in both themes: three reciters grouped (Style-B surah rows with
+    /// durations), the first group's first surah playing (highlighted) via a `SnapshotPlayer`. Synthetic
+    /// `Data()` bookmarks never resolve, but the snapshot only displays + matches the source id — it never
+    /// plays real audio. Durations mirror the mockup, plus one ≥ 1h track to exercise the h:mm:ss label.
+    private static func renderLibrary(outDir: String, surahs: [Surah], written: inout [String]) {
         func track(_ reciter: String, _ surah: Int, _ durationMs: Int) -> LocalTrack {
             LocalTrack(bookmark: Data(), reciterName: reciter, surahNumber: surah,
                        confidence: 1.0, durationMs: durationMs)
         }
-        library.add([
-            track("Abdul Basit Abdul Samad", 1, 96_000),     // Al-Fatiha · 1:36 (playing)
-            track("Abdul Basit Abdul Samad", 36, 540_000),   // Ya-Sin · 9:00
-            track("Mahmoud Al-Husary", 2, 1_082_000),        // Al-Baqarah · 18:02
-            track("Mahmoud Al-Husary", 18, 2_292_000),       // Al-Kahf · 38:12
-            track("Mahmoud Al-Husary", 55, 760_000),         // Ar-Rahman · 12:40
-            track("Abdul Rahman Al-Sudais", 112, 41_000),    // Al-Ikhlas · 0:41
-        ])
-        let importer = LibraryImporter(library: library); importer.surahs = surahs
-        let engine = PlaybackEngine(player: SnapshotPlayer()); engine.attachSurahs(surahs)
-        // Play the alphabetically-first group's first surah so the highlighted row sits at the top.
-        if let playing = library.grouped().first?.tracks.first {
-            engine.play(.localTrack(track: playing, url: URL(fileURLWithPath: "/dev/null")))
+        for (raw, theme, isDark) in themes {
+            let tokens = Tokens.of(theme)
+            let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            let library = LibraryStore(directory: tmp)
+            library.add([
+                track("Abdul Basit Abdul Samad", 1, 96_000),     // Al-Fatiha · 1:36 (playing)
+                track("Abdul Basit Abdul Samad", 36, 540_000),   // Ya-Sin · 9:00
+                track("Mahmoud Al-Husary", 2, 7_325_000),        // Al-Baqarah · 2:02:05 (h:mm:ss)
+                track("Mahmoud Al-Husary", 18, 2_292_000),       // Al-Kahf · 38:12
+                track("Mahmoud Al-Husary", 55, 760_000),         // Ar-Rahman · 12:40
+                track("Abdul Rahman Al-Sudais", 112, 41_000),    // Al-Ikhlas · 0:41
+            ])
+            let importer = LibraryImporter(library: library); importer.surahs = surahs
+            let engine = PlaybackEngine(player: SnapshotPlayer()); engine.attachSurahs(surahs)
+            // Play the alphabetically-first group's first surah so the highlighted row sits at the top.
+            if let playing = library.grouped().first?.tracks.first {
+                engine.play(.localTrack(track: playing, url: URL(fileURLWithPath: "/dev/null")))
+            }
+            let view = LibraryTabView(library: library, importer: importer, engine: engine,
+                                      surahs: surahs, tokens: tokens, playLocal: { _ in })
+                .frame(width: 344)
+                .environment(\.colorScheme, isDark ? .dark : .light).background(tokens.bg)
+            let path = "\(outDir)/library-\(raw).png"
+            if writePNG(view, to: path) { written.append(path) }
         }
-        let view = LibraryTabView(library: library, importer: importer, engine: engine,
-                                  surahs: surahs, tokens: noor, playLocal: { _ in })
-            .frame(width: 344).background(noor.bg)
-        let path = "\(outDir)/library.png"
-        if writePNG(view, to: path) { written.append(path) }
     }
 
-    /// Renders the Task 7 tagger review sheet in Noor with four seeded pending imports, mirroring the
-    /// mockup: two confident rows (✓), one amber row (blank reciter + low-confidence guess, shown
-    /// "needs review"), and one medium row (~ chip). Pending imports are injected via the importer's
+    // MARK: - Tagger review sheet
+
+    /// Renders the tagger review sheet in both themes with four seeded pending imports, mirroring the
+    /// mockup: two confident rows (✓), one amber row (blank reciter + low-confidence guess, "needs
+    /// review"), and one medium row (~ chip). Pending imports are injected via the importer's
     /// `seedPending` seam; synthetic `Data()` bookmarks never resolve, but the sheet only displays the
     /// guesses and edits — it never commits or plays here.
-    private static func renderTaggerReview(outDir: String, written: inout [String]) {
-        let noor = Tokens.of(.noor)
-        let surahs = (try? QuranData.loadSurahs()) ?? []
-        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let library = LibraryStore(directory: tmp)
-        let importer = LibraryImporter(library: library); importer.surahs = surahs
+    private static func renderTaggerReview(outDir: String, surahs: [Surah], written: inout [String]) {
         func pending(_ name: String, reciter: String?, surah: Int?, confidence: Double, _ ms: Int?) -> PendingImport {
             PendingImport(url: URL(fileURLWithPath: "/Music/Qurani/\(name)"), bookmark: Data(),
                           guess: Tagger.Guess(reciterName: reciter, surahNumber: surah, confidence: confidence),
                           durationMs: ms)
         }
-        importer.seedPending([
-            pending("002-husary.mp3", reciter: "Mahmoud Al-Husary", surah: 2, confidence: 0.9, 1_082_000),
-            pending("sudais-018-alkahf.mp3", reciter: "Sudais", surah: 18, confidence: 0.9, 2_292_000),
-            pending("track 12.mp3", reciter: nil, surah: 23, confidence: 0.3, 760_000),       // amber: blank reciter
-            pending("alfatiha-basit.mp3", reciter: "Abdul Basit", surah: 1, confidence: 0.5, 96_000),
-        ])
-        let view = TaggerReviewView(importer: importer, surahs: surahs, tokens: noor, commit: { _ in })
-            .frame(width: 344, height: 560)   // tall enough that all four seeded rows sit above the fold
-            .background(noor.bg)
-        let path = "\(outDir)/tagger-review.png"
-        if writePNG(view, to: path) { written.append(path) }
-    }
-
-    /// Renders the full Settings screen in Noor: the Noor swatch shown selected (its `@AppStorage`
-    /// theme is set first), the hotkey recorder, both toggles, the default library folder, and the
-    /// About/attribution footer. Throwaway stores so nothing reads or mutates real user data. A tall
-    /// frame so every section (through About) sits above the fold for review.
-    private static func renderSettings(outDir: String, written: inout [String]) {
-        UserDefaults.standard.set("noor", forKey: "theme")     // drives SettingsView's @AppStorage swatch
-        let noor = Tokens.of(.noor)
-        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let library = LibraryStore(directory: tmp)
-        let view = SettingsView(settings: SettingsStore(directory: tmp),
-                                importer: LibraryImporter(library: library),
-                                tokens: noor, onClose: {})
-            .frame(width: 344, height: 620).background(noor.bg)
-        let path = "\(outDir)/settings.png"
-        if writePNG(view, to: path) { written.append(path) }
-    }
-
-    /// Renders the now-playing bar mid-on-demand in both Noor and Sahar: Ar-Rahman (55)
-    /// streaming with `elapsed 92s / duration 760s` → labels "1:32 / 12:40" and the
-    /// scrubber ~12% filled (`isLive == false`, so the draggable track shows).
-    private static func renderNowPlaying(outDir: String, written: inout [String]) {
-        let surahs = (try? QuranData.loadSurahs()) ?? []
-        guard let surah = surahs.first(where: { $0.number == 55 }) else { return }   // Ar-Rahman
-        let url = URL(string: "https://server.example/055.mp3")!
-        for (raw, theme) in [("noor", ResolvedTheme.noor), ("sahar", .sahar)] {
-            let player = SnapshotPlayer()
-            let engine = PlaybackEngine(player: player)
-            engine.play(.onDemand(reciterID: 1, reciterName: "Mishary Alafasy",
-                                  moshafID: 1, surah: surah, url: url))
-            player.onTime?(92, 760)    // feed position through the engine → elapsed 1:32 of 12:40
-            let bar = NowPlayingBar(engine: engine, tokens: Tokens.of(theme))
-                .frame(width: 344).background(Tokens.of(theme).bg)
-            let path = "\(outDir)/nowplaying-\(raw).png"
-            if writePNG(bar, to: path) { written.append(path) }
+        for (raw, theme, isDark) in themes {
+            let tokens = Tokens.of(theme)
+            let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            let library = LibraryStore(directory: tmp)
+            let importer = LibraryImporter(library: library); importer.surahs = surahs
+            importer.seedPending([
+                pending("002-husary.mp3", reciter: "Mahmoud Al-Husary", surah: 2, confidence: 0.9, 1_082_000),
+                pending("sudais-018-alkahf.mp3", reciter: "Sudais", surah: 18, confidence: 0.9, 2_292_000),
+                pending("track 12.mp3", reciter: nil, surah: 23, confidence: 0.3, 760_000),       // amber: blank reciter
+                pending("alfatiha-basit.mp3", reciter: "Abdul Basit", surah: 1, confidence: 0.5, 96_000),
+            ])
+            let view = TaggerReviewView(importer: importer, surahs: surahs, tokens: tokens, commit: { _ in })
+                .frame(width: 344, height: 560)   // tall enough that all four seeded rows sit above the fold
+                .environment(\.colorScheme, isDark ? .dark : .light).background(tokens.bg)
+            let path = "\(outDir)/tagger-review-\(raw).png"
+            if writePNG(view, to: path) { written.append(path) }
         }
     }
 
-    /// Renders the Mix tab in Noor in both states, reusing `model` (its stores point at a throwaway
-    /// directory): the **build** panel — seeded on-demand candidates (two pooled → pre-checked, one
-    /// favorited → unchecked) plus local candidates — and the **playing** queue, seeded directly via
-    /// `AppModel.seedMix` (no engine) with the first row highlighted. The build render runs first
-    /// since `seedMix` flips `isMixing`, which switches the view to the playing branch.
-    private static func renderMix(model: AppModel, outDir: String, written: inout [String]) {
-        let noor = Tokens.of(.noor)
-        let surahs = (try? QuranData.loadSurahs()) ?? []
+    // MARK: - Settings
+
+    /// Renders the full Settings screen in both themes: the matching swatch shown selected (its
+    /// `@AppStorage` theme is set first), the hotkey recorder, both toggles, the default library folder,
+    /// and the About/attribution footer. Throwaway stores so nothing reads or mutates real user data. A
+    /// tall frame so every section (through About) sits above the fold for review.
+    private static func renderSettings(outDir: String, written: inout [String]) {
+        for (raw, theme, isDark) in themes {
+            UserDefaults.standard.set(raw, forKey: "theme")     // drives SettingsView's @AppStorage swatch
+            let tokens = Tokens.of(theme)
+            let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            let library = LibraryStore(directory: tmp)
+            let view = SettingsView(settings: SettingsStore(directory: tmp),
+                                    importer: LibraryImporter(library: library),
+                                    tokens: tokens, onClose: {})
+                .frame(width: 344, height: 620)
+                .environment(\.colorScheme, isDark ? .dark : .light).background(tokens.bg)
+            let path = "\(outDir)/settings-\(raw).png"
+            if writePNG(view, to: path) { written.append(path) }
+        }
+    }
+
+    // MARK: - Now-playing bar (live / on-demand / mix variants)
+
+    /// Renders all three now-playing variants in both themes:
+    ///   • `nowplaying-live-<theme>.png` — a live station (red LIVE pill, no scrubber).
+    ///   • `nowplaying-ondemand-<theme>.png` — Ar-Rahman streaming, elapsed 1:32 of 12:40, scrubber ~12%.
+    ///   • `nowplaying-mix-<theme>.png` — a mix item (⤮ MIX chip + "up next" hint + on-demand scrubber).
+    /// A `SnapshotPlayer` lets each item reach `.playing`; feeding `onTime` fills the scrubber without
+    /// real audio or a network.
+    private static func renderNowPlaying(outDir: String, surahs: [Surah], written: inout [String]) {
+        guard let rahman = surahs.first(where: { $0.number == 55 }) else { return }   // Ar-Rahman
+        let base = URL(string: "https://server.example/")!
+        let makkah = Station(id: "makkah", name: "Makkah — Al-Haram", region: "Makkah",
+                             kind: .hls, url: URL(string: "https://server.example/makkah")!,
+                             reciter: nil, hasVideo: true)
+
+        for (raw, theme, isDark) in themes {
+            let tokens = Tokens.of(theme)
+
+            // Live: a featured station — LIVE pill, no progress control.
+            let liveEngine = PlaybackEngine(player: SnapshotPlayer())
+            liveEngine.playStation(makkah)
+            let livePath = "\(outDir)/nowplaying-live-\(raw).png"
+            if writePNG(NowPlayingBar(engine: liveEngine, tokens: tokens).frame(width: 344)
+                .environment(\.colorScheme, isDark ? .dark : .light).background(tokens.bg),
+                        to: livePath) { written.append(livePath) }
+
+            // On-demand: Ar-Rahman, elapsed 1:32 of 12:40 → scrubber ~12% filled.
+            let odPlayer = SnapshotPlayer()
+            let odEngine = PlaybackEngine(player: odPlayer)
+            odEngine.play(.onDemand(reciterID: 1, reciterName: "Mishary Alafasy", moshafID: 1,
+                                    surah: rahman, url: URL(string: "https://server.example/055.mp3")!))
+            odPlayer.onTime?(92, 760)
+            let odPath = "\(outDir)/nowplaying-ondemand-\(raw).png"
+            if writePNG(NowPlayingBar(engine: odEngine, tokens: tokens).frame(width: 344)
+                .environment(\.colorScheme, isDark ? .dark : .light).background(tokens.bg),
+                        to: odPath) { written.append(odPath) }
+
+            // Mix: the ⤮ MIX source chip + "up next · random" hint + on-demand scrubber (0:32 of 1:30).
+            if let s1 = surahs.first(where: { $0.number == 1 }) {
+                let mixPlayer = SnapshotPlayer()
+                let mixEngine = PlaybackEngine(player: mixPlayer); mixEngine.attachSurahs(surahs)
+                mixEngine.play(.onDemand(reciterID: 1, reciterName: "Abdul Rahman Al-Sudais", moshafID: 1,
+                                         surah: s1, url: CatalogService.audioURL(serverBase: base, surah: 1)))
+                mixPlayer.onTime?(32, 90)
+                let upNext = (memberName: "Abdul Basit Abdul Samad",
+                              surahName: surahs.first { $0.number == 2 }?.nameAr ?? "Surah 2")
+                let mixPath = "\(outDir)/nowplaying-mix-\(raw).png"
+                if writePNG(NowPlayingBar(engine: mixEngine, tokens: tokens, isMixing: true, upNext: upNext)
+                    .frame(width: 344)
+                    .environment(\.colorScheme, isDark ? .dark : .light).background(tokens.bg),
+                            to: mixPath) { written.append(mixPath) }
+            }
+        }
+    }
+
+    // MARK: - Mix (build panel + playing queue)
+
+    /// Renders the Mix tab in both themes, reusing `model` (its stores point at a throwaway directory):
+    /// the **build** panel — seeded on-demand candidates (two pooled → pre-checked, one favorited →
+    /// unchecked) plus local candidates — and the **playing** queue, seeded directly via `AppModel.seedMix`
+    /// (no engine) with the first row highlighted. All build renders run first, because `seedMix` flips
+    /// `isMixing`, which switches the view to the playing branch for the rest of the function.
+    private static func renderMix(model: AppModel, outDir: String, surahs: [Surah], written: inout [String]) {
         let base = URL(string: "https://server.example/")!
 
-        // Build: seed catalog + pool/favorites (on-demand candidates) + library (local candidates).
+        // Seed catalog + pool/favorites (on-demand candidates) + library (local candidates) once.
         func onDemand(_ id: Int, _ name: String) -> Reciter {
             Reciter(id: id, name: name,
                     moshafs: [Moshaf(id: id * 10, name: "Hafs", serverBase: base, surahNumbers: Array(1...114))])
@@ -296,12 +383,17 @@ import QuraniKit
         model.library.add([local("Mahmoud Al-Husary", 2),
                            local("Abdul Rahman Al-Sudais", 1),
                            local("Abdul Basit Abdul Samad", 36)])
-        let build = MixTabView(model: model, tokens: noor)
-            .frame(width: 344, height: 470).background(noor.bg)
-        let buildPath = "\(outDir)/mix-build.png"
-        if writePNG(build, to: buildPath) { written.append(buildPath) }
 
-        // Playing: seed a small queue + its pool directly (no real audio); first row highlighted.
+        // Build state (isMixing still false) — both themes.
+        for (raw, theme, isDark) in themes {
+            let build = MixTabView(model: model, tokens: Tokens.of(theme))
+                .frame(width: 344, height: 470)
+                .environment(\.colorScheme, isDark ? .dark : .light).background(Tokens.of(theme).bg)
+            let path = "\(outDir)/mix-build-\(raw).png"
+            if writePNG(build, to: path) { written.append(path) }
+        }
+
+        // Seed a small queue + its pool directly (no real audio); first row highlighted.
         model.surahs = surahs
         let pool: [PoolMember] = [
             PoolMember(id: "local:Sudais", source: .local, displayName: "Abdul Rahman Al-Sudais",
@@ -320,29 +412,18 @@ import QuraniKit
                      MixQueueItem(surah: 5, memberID: "local:Basit"),
                      MixQueueItem(surah: 6, memberID: "local:Sudais")]
         model.seedMix(queue: queue, pool: pool, index: 0)
-        let playing = MixTabView(model: model, tokens: noor)
-            .frame(width: 344).background(noor.bg)
-        let playingPath = "\(outDir)/mix-playing.png"
-        if writePNG(playing, to: playingPath) { written.append(playingPath) }
 
-        // The now-playing bar during a mix (Noor): the ⤮ MIX source chip + the "up next · random"
-        // hint + the on-demand scrubber. A `SnapshotPlayer` lets the item reach `.playing`; feeding
-        // `onTime(32, 90)` fills the scrubber (0:32 of 1:30) without real audio.
-        if let s1 = surahs.first(where: { $0.number == 1 }) {
-            let player = SnapshotPlayer()
-            let engine = PlaybackEngine(player: player)
-            engine.attachSurahs(surahs)
-            engine.play(.onDemand(reciterID: 1, reciterName: "Abdul Rahman Al-Sudais",
-                                  moshafID: 1, surah: s1, url: CatalogService.audioURL(serverBase: base, surah: 1)))
-            player.onTime?(32, 90)
-            let upNext = (memberName: "Abdul Basit Abdul Samad",
-                          surahName: surahs.first { $0.number == 2 }?.nameAr ?? "Surah 2")
-            let bar = NowPlayingBar(engine: engine, tokens: noor, isMixing: true, upNext: upNext)
-                .frame(width: 344).background(noor.bg)
-            let barPath = "\(outDir)/mix-nowplaying.png"
-            if writePNG(bar, to: barPath) { written.append(barPath) }
+        // Playing state (isMixing now true) — both themes.
+        for (raw, theme, isDark) in themes {
+            let playing = MixTabView(model: model, tokens: Tokens.of(theme))
+                .frame(width: 344)
+                .environment(\.colorScheme, isDark ? .dark : .light).background(Tokens.of(theme).bg)
+            let path = "\(outDir)/mix-playing-\(raw).png"
+            if writePNG(playing, to: path) { written.append(path) }
         }
     }
+
+    // MARK: - Helpers
 
     private static func registerBundledFonts() {
         for name in ["AmiriQuran-Regular", "NotoNaskhArabic-Regular"] {
@@ -352,11 +433,11 @@ import QuraniKit
         }
     }
 
-    // Render via an offscreen NSHostingView in a borderless window. ImageRenderer (the
-    // first choice) rasterizes SF Symbols as the prohibitory placeholder in this headless
-    // agent context; hosting the real view tree captures symbols AND the AppKit vibrancy
-    // at the window's backing scale (2x on Retina). Launch through LaunchServices
-    // (`open -nW <app> --args --snapshot <dir>`) so the process has a WindowServer context.
+    // Render via an offscreen NSHostingView in a borderless window. Hosting the real view tree (vs.
+    // ImageRenderer, which rasterizes SF Symbols as the prohibitory placeholder in this headless agent
+    // context) captures symbols AND the AppKit vibrancy at the window's backing scale (2x on Retina).
+    // Launch through LaunchServices (`open -nW <app> --args --snapshot <dir>`) so the process has a
+    // WindowServer context.
     private static func writePNG(_ view: some View, to path: String) -> Bool {
         let hosting = NSHostingView(rootView: view)
         hosting.layoutSubtreeIfNeeded()

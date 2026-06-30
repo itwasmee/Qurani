@@ -6,6 +6,7 @@
 
 # Xcode / SwiftPM
 .build/
+.build-xcode/
 DerivedData/
 *.xcodeproj/xcuserdata/
 *.xcworkspace/xcuserdata/

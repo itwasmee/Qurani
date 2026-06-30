@@ -133,7 +133,7 @@ struct NowPlayingBar: View {
     }
 
     /// Thin, draggable progress track for on-demand playback. Dragging seeks the engine
-    /// live; `mm:ss` labels flank the track (elapsed on the left, total on the right).
+    /// live; `h:mm:ss` labels flank the track (elapsed on the left, total on the right).
     @ViewBuilder private func scrubber(_ np: NowPlaying) -> some View {
         let played = np.duration > 0 ? min(max(np.elapsed / np.duration, 0), 1) : 0
         let fraction = dragFraction ?? played

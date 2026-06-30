@@ -53,11 +53,16 @@ struct MixTabView: View {
     }
 
     var body: some View {
-        if model.isMixing {
-            playingBody
-        } else {
-            buildBody
+        Group {
+            if model.isMixing {
+                playingBody
+            } else {
+                buildBody
+            }
         }
+        // Drop a stale "no surahs in range" hint when leaving the Mix tab, so reopening it later never
+        // shows a no-coverage warning left over from a prior failed build (it's cleared on next start).
+        .onDisappear { model.mixNoCoverage = false }
     }
 
     // MARK: - Build
@@ -297,8 +302,13 @@ struct MixTabView: View {
     @ViewBuilder private func sourceBadge(_ source: PoolSource?) -> some View {
         if let source {
             let isLocal = source == .local
+            // Tint the glyph to match the build view's `PoolRow` badge: ☁︎ is a text glyph that needs an
+            // explicit color (it was inheriting the primary text color), so gold for local / blue for
+            // on-demand keeps the queue badge consistent with the pool list. (📚 is emoji, ignores it.)
+            let fg = isLocal ? tokens.gold : (tokens.isDark ? Color(hex: 0x9fd0f0) : Color(hex: 0x2c6e96))
             Text(isLocal ? "📚" : "☁︎")
                 .font(.system(size: 10))
+                .foregroundStyle(fg)
                 .padding(.horizontal, 5).padding(.vertical, 3)
                 .background((isLocal ? tokens.gold : Color(hex: 0x78c8ff)).opacity(tokens.isDark ? 0.16 : 0.20),
                             in: RoundedRectangle(cornerRadius: 5))

@@ -217,10 +217,11 @@ struct LibraryTabView: View {
 
     // MARK: - Helpers
 
-    /// `mm:ss` from a millisecond duration; nil when unknown so the row shows just the transliteration.
+    /// `h:mm:ss` (or `m:ss` under an hour) from a millisecond duration; nil when unknown so the row
+    /// shows just the transliteration. Uses the shared `TimeFormat` so a long recitation (≥ 1h, e.g.
+    /// Al-Baqarah) reads "1:02:05" rather than the ambiguous "62:05" the old hand-rolled `%d:%02d` gave.
     private static func durationLabel(_ ms: Int?) -> String? {
         guard let ms, ms > 0 else { return nil }
-        let total = ms / 1000
-        return String(format: "%d:%02d", total / 60, total % 60)
+        return TimeFormat.label(Double(ms) / 1000)
     }
 }
