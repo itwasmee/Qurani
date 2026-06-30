@@ -13,6 +13,10 @@ struct ExploreTabView: View {
     let surahs: [Surah]
     let tokens: Tokens
     let play: (Reciter, Moshaf, Surah) -> Void
+    /// Deep-link request from `GlassPanel` (tap the now-playing bar while an on-demand item plays):
+    /// when non-nil, open that reciter's detail page, then clear back to nil. Watched below with
+    /// `.onChange(initial:)` so it fires even when this tap is what first reveals the Explore tab.
+    @Binding var focusReciterID: Int?
 
     @State private var search = ""
     @State private var riwaya: String?          // nil == All
@@ -24,6 +28,13 @@ struct ExploreTabView: View {
     private var results: [Reciter] { catalog.filtered(search: search, riwaya: riwaya) }
 
     var body: some View {
+        content
+            // `initial: true` so a tap that *switches to* Explore (creating this view fresh with the
+            // focus already set) still applies it — a plain onChange would miss that first value.
+            .onChange(of: focusReciterID, initial: true) { _, id in applyFocus(id) }
+    }
+
+    @ViewBuilder private var content: some View {
         if let selectedReciter {
             ReciterDetailView(reciter: selectedReciter, favorites: favorites, pool: pool,
                               engine: engine, surahs: surahs, tokens: tokens,
@@ -32,6 +43,17 @@ struct ExploreTabView: View {
         } else {
             catalogView
         }
+    }
+
+    /// Resolve a deep-link focus request to a catalog reciter and open its detail page, then clear the
+    /// request. A nil request — or a reciter id not yet in the loaded `catalog.reciters` — is a no-op
+    /// beyond clearing: Explore stays on the list rather than crashing.
+    private func applyFocus(_ id: Int?) {
+        guard let id else { return }
+        if let reciter = catalog.reciters.first(where: { $0.id == id }) {
+            selectedReciter = reciter
+        }
+        focusReciterID = nil
     }
 
     // MARK: - Catalog (search + chips + list)

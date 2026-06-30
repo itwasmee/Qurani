@@ -189,7 +189,7 @@ import QuraniKit
             let list = ExploreTabView(
                 catalog: catalog, favorites: FavoritesStore(directory: tmp), pool: listPool,
                 engine: PlaybackEngine(player: SnapshotPlayer()), surahs: surahs,
-                tokens: tokens, play: { _, _, _ in })
+                tokens: tokens, play: { _, _, _ in }, focusReciterID: .constant(nil))
                 .frame(width: 344)
                 .environment(\.colorScheme, isDark ? .dark : .light).background(tokens.bg)
             let listPath = "\(outDir)/explore-list-\(raw).png"

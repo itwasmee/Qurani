@@ -10,6 +10,11 @@ struct NowPlayingBar: View {
     /// The reciter + surah of the item that plays after the current mix item, already resolved to
     /// display names by `GlassPanel`. Nil at the tail of the queue (or when not mixing).
     var upNext: (memberName: String, surahName: String)? = nil
+    /// Tap on the art + title/reciter region → jump the panel to wherever the current audio plays
+    /// from (Mix / Explore-reciter / Live / Library). Only this leading region fires it; the play/pause
+    /// button and the scrubber stay independently interactive. Defaults to a no-op so other call sites
+    /// (and the snapshot renderer) compile unchanged.
+    var onTapSource: () -> Void = {}
     /// Fraction (0…1) under the finger while scrubbing, so the thumb tracks the drag
     /// immediately instead of waiting for the engine's next reported position. `nil` when
     /// not dragging — the track then follows `nowPlaying.elapsed/duration`.
@@ -63,39 +68,49 @@ struct NowPlayingBar: View {
     @ViewBuilder private func playingBar(_ np: NowPlaying) -> some View {
         VStack(spacing: 8) {
             HStack(spacing: 10) {
-                RoundedRectangle(cornerRadius: 9).fill(tokens.glassTint).frame(width: 34, height: 34)
-                    .overlay(RoundedRectangle(cornerRadius: 9)
-                        .stroke(Color.white.opacity(tokens.isDark ? 0.12 : 0.5), lineWidth: 1))
-                    .overlay(Image(systemName: "waveform").font(.system(size: 16)).foregroundStyle(tokens.accent))
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(np.surahHint ?? np.title)
-                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(tokens.text).lineLimit(1)
-                    HStack(spacing: 5) {
-                        if np.isLive {
-                            Text("LIVE").font(.system(size: 8, weight: .heavy)).foregroundStyle(.white)
-                                .padding(.horizontal, 5).padding(.vertical, 2)
-                                .background(.red, in: RoundedRectangle(cornerRadius: 5))
-                        } else if isMixing {
-                            // The mockup's ⤮ MIX chip; the ⤮ glyph isn't in SF Pro, so the native
-                            // `shuffle` SF Symbol stands in (same shuffle/mix concept, matches the
-                            // build view's "Shuffle"). Live keeps precedence so a stale flag can't
-                            // mask a live station's LIVE pill.
-                            HStack(spacing: 3) {
-                                Image(systemName: "shuffle").font(.system(size: 7.5, weight: .heavy))
-                                Text("MIX").font(.system(size: 8, weight: .heavy))
+                // Art + title/reciter region is a single tap target that jumps to the source. Wrapping
+                // it in a Button (with a subtle press style) keeps it independent of the sibling
+                // play/pause Button and the scrubber below — tapping here never toggles playback.
+                Button(action: onTapSource) {
+                    HStack(spacing: 10) {
+                        RoundedRectangle(cornerRadius: 9).fill(tokens.glassTint).frame(width: 34, height: 34)
+                            .overlay(RoundedRectangle(cornerRadius: 9)
+                                .stroke(Color.white.opacity(tokens.isDark ? 0.12 : 0.5), lineWidth: 1))
+                            .overlay(Image(systemName: "waveform").font(.system(size: 16)).foregroundStyle(tokens.accent))
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(np.surahHint ?? np.title)
+                                .font(.system(size: 12, weight: .semibold)).foregroundStyle(tokens.text).lineLimit(1)
+                            HStack(spacing: 5) {
+                                if np.isLive {
+                                    Text("LIVE").font(.system(size: 8, weight: .heavy)).foregroundStyle(.white)
+                                        .padding(.horizontal, 5).padding(.vertical, 2)
+                                        .background(.red, in: RoundedRectangle(cornerRadius: 5))
+                                } else if isMixing {
+                                    // The mockup's ⤮ MIX chip; the ⤮ glyph isn't in SF Pro, so the native
+                                    // `shuffle` SF Symbol stands in (same shuffle/mix concept, matches the
+                                    // build view's "Shuffle"). Live keeps precedence so a stale flag can't
+                                    // mask a live station's LIVE pill.
+                                    HStack(spacing: 3) {
+                                        Image(systemName: "shuffle").font(.system(size: 7.5, weight: .heavy))
+                                        Text("MIX").font(.system(size: 8, weight: .heavy))
+                                    }
+                                    .foregroundStyle(tokens.accent)
+                                    .padding(.horizontal, 5).padding(.vertical, 2)
+                                    .background(tokens.accent.opacity(0.16), in: RoundedRectangle(cornerRadius: 5))
+                                } else if isLocal {
+                                    Text("📚 LIBRARY").font(.system(size: 8, weight: .heavy)).foregroundStyle(tokens.gold)
+                                        .padding(.horizontal, 5).padding(.vertical, 2)
+                                        .background(tokens.gold.opacity(0.16), in: RoundedRectangle(cornerRadius: 5))
+                                }
+                                Text(np.subtitle).font(.system(size: 10)).foregroundStyle(tokens.muted).lineLimit(1)
                             }
-                            .foregroundStyle(tokens.accent)
-                            .padding(.horizontal, 5).padding(.vertical, 2)
-                            .background(tokens.accent.opacity(0.16), in: RoundedRectangle(cornerRadius: 5))
-                        } else if isLocal {
-                            Text("📚 LIBRARY").font(.system(size: 8, weight: .heavy)).foregroundStyle(tokens.gold)
-                                .padding(.horizontal, 5).padding(.vertical, 2)
-                                .background(tokens.gold.opacity(0.16), in: RoundedRectangle(cornerRadius: 5))
                         }
-                        Text(np.subtitle).font(.system(size: 10)).foregroundStyle(tokens.muted).lineLimit(1)
+                        Spacer(minLength: 0)
                     }
+                    .contentShape(Rectangle())
                 }
-                Spacer()
+                .buttonStyle(NowPlayingSourceButtonStyle())
+                .help("Go to what's playing")
                 Button { engine.toggle() } label: {
                     Image(systemName: engine.status == .playing ? "pause.fill" : "play.fill")
                         .font(.system(size: 13, weight: .bold))
@@ -167,5 +182,16 @@ struct NowPlayingBar: View {
                 .font(.system(size: 9, weight: .medium).monospacedDigit())
                 .foregroundStyle(tokens.muted).fixedSize()
         }
+    }
+}
+
+/// Subtle press affordance for the tappable now-playing source region: dims briefly while pressed
+/// without altering the bar's layout (no scale/inset). Kept separate from the play/pause button's
+/// `.plain` style so only the art + title region gets the dip.
+private struct NowPlayingSourceButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.55 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }

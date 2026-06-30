@@ -17,6 +17,12 @@ import QuraniKit
     let settings: SettingsStore
     @Published var surahs: [Surah] = []
 
+    /// Explore deep-link request: set to a reciter id to ask the Explore tab to open that reciter's
+    /// detail page. Driven by tapping the now-playing bar while an on-demand item plays — `GlassPanel`
+    /// sets it alongside switching to the Explore tab, and `ExploreTabView` watches it, opens the
+    /// matching reciter from `catalog.reciters`, then clears it back to nil. nil == no pending request.
+    @Published var exploreFocusReciterID: Int?
+
     // App-lifetime singletons: created exactly once in `init` (see C1). `bootstrap()`
     // runs from `.task{}`, which re-fires on every panel open — building the bridge or
     // re-registering the hotkey there would stack duplicate command targets/handlers.

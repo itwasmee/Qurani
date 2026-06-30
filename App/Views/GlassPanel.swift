@@ -74,7 +74,8 @@ struct GlassPanel: View {
                                 play: { model.playStation($0) })
                 case 1:
                     ExploreTabView(catalog: catalog, favorites: favorites, pool: pool,
-                                   engine: engine, surahs: surahs, tokens: tokens, play: play)
+                                   engine: engine, surahs: surahs, tokens: tokens, play: play,
+                                   focusReciterID: $model.exploreFocusReciterID)
                 case 2:
                     LibraryTabView(library: library, importer: importer, engine: engine,
                                    surahs: surahs, tokens: tokens, playLocal: playLocal)
@@ -84,7 +85,8 @@ struct GlassPanel: View {
             }
 
             NowPlayingBar(engine: engine, tokens: tokens,
-                          isMixing: model.isMixing, upNext: upNextDisplay)
+                          isMixing: model.isMixing, upNext: upNextDisplay,
+                          onTapSource: { goToNowPlayingSource() })
         }
         .frame(width: 344)
         .background {
@@ -113,6 +115,30 @@ struct GlassPanel: View {
             }
         }
         .preferredColorScheme(theme == .system ? nil : (resolved == .sahar ? .light : .dark))
+    }
+
+    // MARK: - Now-playing source navigation
+
+    /// Tapping the now-playing bar's art/title region jumps the panel to wherever the current audio
+    /// originates. `isMixing` is checked first because mix items carry on-demand/local source-ids that
+    /// would otherwise mis-route to Explore/Library. On-demand additionally deep-links into the playing
+    /// reciter's Explore detail page via `model.exploreFocusReciterID` (watched by `ExploreTabView`).
+    private func goToNowPlayingSource() {
+        if model.isMixing { tab = 3; return }
+        guard let id = engine.currentSourceID else { return }
+        if id.hasPrefix("live:") {
+            tab = 0
+        } else if id.hasPrefix("local:") {
+            tab = 2
+        } else if id.hasPrefix("ondemand:") {
+            // "ondemand:<reciterID>:<moshafID>:<surahNum>" — the reciter id sits between the first two
+            // colons. Parse it to focus Explore on that reciter; an unparsable id still lands on the tab.
+            let parts = id.split(separator: ":")
+            if parts.count >= 2, let reciterID = Int(parts[1]) {
+                model.exploreFocusReciterID = reciterID
+            }
+            tab = 1
+        }
     }
 
     // MARK: - Commands (the menubar-icon context menu, relocated)
