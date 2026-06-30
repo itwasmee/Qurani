@@ -106,6 +106,7 @@ struct GlassPanel: View {
             Button("Reveal Library Folder") {
                 NSWorkspace.shared.activateFileViewerSelecting([importer.libraryFolderURL])
             }
+            Button("Choose Library Folder…") { importer.chooseLibraryFolder() }
             Divider()
             Button(engine.status == .playing ? "Pause" : "Play") { engine.toggle() }
             Divider()

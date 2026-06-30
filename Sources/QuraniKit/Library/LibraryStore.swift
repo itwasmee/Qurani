@@ -11,15 +11,15 @@ import Foundation
     @Published public private(set) var tracks: [LocalTrack]
     private let fileURL: URL
 
-    /// Designated init: load tracks from `directory/tracks.json` (a missing or corrupt file loads
+    /// Designated init: load tracks from `directory/library.json` (a missing or corrupt file loads
     /// as an empty list). The directory need not exist yet; it is created on first write. Injectable
     /// for tests.
     public init(directory: URL) {
-        self.fileURL = directory.appendingPathComponent("tracks.json")
+        self.fileURL = directory.appendingPathComponent("library.json")
         self.tracks = Self.load(fileURL)
     }
 
-    /// Real path: `Application Support/Qurani/tracks.json`. The support directory is computed
+    /// Real path: `Application Support/Qurani/library.json`. The support directory is computed
     /// (and created) inside the call rather than defaulted as an argument.
     public convenience init() { self.init(directory: IntSetStore.applicationSupportDirectory()) }
 
