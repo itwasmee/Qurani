@@ -92,17 +92,20 @@ import QuraniKit
     /// from the moshaf's server base, then hands a `.onDemand` item to the engine.
     func playOnDemand(reciter: Reciter, moshaf: Moshaf, surah: Surah) {
         if isMixing { stopMix() }   // an explicit single play ends any active random-mix session
+        releaseLocalScope()         // switching to a streamed source — drop any held local file scope
         let url = CatalogService.audioURL(serverBase: moshaf.serverBase, surah: surah.number)
         engine.play(.onDemand(reciterID: reciter.id, reciterName: reciter.name,
                               moshafID: moshaf.id, surah: surah, url: url))
     }
 
     /// Play a library-imported local file. Resolving the track's security-scoped bookmark begins
-    /// access (held for the session — released when the process exits); a track whose file has since
+    /// access; we retain the URL (see `retainLocalScope`) and release the prior local scope so distinct
+    /// local plays don't accrue leaked scopes for the process lifetime. A track whose file has since
     /// moved or been deleted resolves to `nil` and is a no-op rather than a crash.
     func playLocal(_ track: LocalTrack) {
         guard let url = library.resolveURL(track) else { return }
         if isMixing { stopMix() }   // an explicit single play ends any active random-mix session
+        retainLocalScope(url)       // release the prior local scope; keep at most one outstanding
         engine.play(.localTrack(track: track, url: url))
     }
 
@@ -112,7 +115,32 @@ import QuraniKit
     /// "up next" hint under a LIVE item, and a re-roll could hijack audio back off the station).
     func playStation(_ s: Station) {
         if isMixing { stopMix() }
+        releaseLocalScope()   // switching to live — drop any held local file scope
         engine.playStation(s)
+    }
+
+    // MARK: - Local file scope
+    //
+    // `library.resolveURL` begins security-scoped access that the engine relies on while a local file
+    // plays, but never stops it — so a distinct local play used to leak one scope per file for the
+    // process lifetime. We retain the single resolved URL and release it before resolving the next
+    // local item (and when switching to a non-local source or on mix teardown), keeping at most one
+    // outstanding local scope at a time.
+
+    /// The security-scoped local file URL currently held open (≤1 outstanding), or nil.
+    private var scopedLocalURL: URL?
+
+    /// Retain `url` as the held local scope, releasing the previous one first. (Resolving the same
+    /// file twice begins access twice; stopping the prior reference rebalances to a single hold.)
+    private func retainLocalScope(_ url: URL) {
+        scopedLocalURL?.stopAccessingSecurityScopedResource()
+        scopedLocalURL = url
+    }
+
+    /// Stop accessing the held local scope, if any.
+    private func releaseLocalScope() {
+        scopedLocalURL?.stopAccessingSecurityScopedResource()
+        scopedLocalURL = nil
     }
 
     /// Commit the review sheet's confirmed imports to the library, then drop them from the pending
@@ -139,6 +167,10 @@ import QuraniKit
 
     /// True while a Mix session is active (drives the Mix tab's play/stop affordance).
     @Published var isMixing = false
+    /// Set when a non-empty pool selection builds an empty queue (no covered surah in the chosen
+    /// range). The Mix tab surfaces a "no surahs in range" hint instead of tearing down whatever is
+    /// currently playing. Cleared on a successful start.
+    @Published var mixNoCoverage = false
     /// The resolved per-surah playback order for the current session; empty when not mixing.
     @Published private(set) var mixQueue: [MixQueueItem] = []
     /// Index into `mixQueue` of the item currently playing. Published so the Mix playing list can
@@ -187,14 +219,16 @@ import QuraniKit
 
     /// Begin a Mix session with the given config over the given pool. Builds the queue, wires the
     /// engine's finish callback to advance through it, and starts at the top. A pool that covers no
-    /// surah in range yields an empty queue and a no-op (isMixing stays false).
+    /// surah in range yields an empty queue: rather than stopping whatever is currently playing, this
+    /// sets `mixNoCoverage` (the Mix tab's hint) and is otherwise a no-op (isMixing stays false).
     func startMix(config: MixConfig, pool: [PoolMember]) {
         mixConfig = config
         mixPool = pool
         rebuildQueue()
         mixIndex = 0
-        // No covered surah → no session: tear down any prior one rather than just clearing the flag.
-        guard !mixQueue.isEmpty else { stopMix(); return }
+        // Non-empty selection but nothing in range covered → hint, don't tear down current audio.
+        guard !mixQueue.isEmpty else { mixNoCoverage = true; return }
+        mixNoCoverage = false
         isMixing = true
         engine.onFinish = { [weak self] in self?.advanceMix() }
         playMixIndex(0)
@@ -213,6 +247,7 @@ import QuraniKit
         guard let member = mixPool.first(where: { $0.id == item.memberID }) else { advanceMix(); return }
         switch member.source {
         case .onDemand:
+            releaseLocalScope()   // streamed item — drop any local file scope the prior item held
             guard let surah = surahs.first(where: { $0.number == item.surah }) else { advanceMix(); return }
             // moshaf/reciterID are non-nil for every on-demand member `buildPool` emits.
             let url = CatalogService.audioURL(serverBase: member.moshaf!.serverBase, surah: item.surah)
@@ -224,6 +259,7 @@ import QuraniKit
                   }),
                   let url = library.resolveURL(track)
             else { advanceMix(); return }
+            retainLocalScope(url)   // release the prior local scope, hold this one (≤1 outstanding)
             engine.play(.localTrack(track: track, url: url))
         }
     }
@@ -255,6 +291,7 @@ import QuraniKit
         engine.onFinish = nil
         engine.stop()
         mixQueue = []
+        releaseLocalScope()   // drop any local file scope the mix was holding
     }
 
     /// Rebuild `mixQueue` from the retained `mixPool` + `mixConfig` using system-RNG randomness.

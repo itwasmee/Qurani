@@ -49,11 +49,17 @@ struct ReviewedImport: Sendable, Equatable {
 
     private let library: LibraryStore
     private let defaults: UserDefaults
+    private var cancellables: Set<AnyCancellable> = []
 
     // Watched-folder state. `folderSource` fires on directory writes; `watchedFolderURL` holds the
     // folder's security-scoped access for the lifetime of the watch (child files inherit it).
     private var folderSource: DispatchSourceFileSystemObject?
     private var watchedFolderURL: URL?
+
+    /// Resolved file paths of the committed library, cached. Recomputed only when `library.tracks`
+    /// changes (the `$tracks` subscription in `init`), not on every watched-folder FS event —
+    /// resolving each track's bookmark is relatively costly and a single file copy fires many writes.
+    private var cachedLibraryPaths: Set<String> = []
 
     private static let libraryFolderBookmarkKey = "libraryFolderBookmark"
     private static let audioExtensions: Set<String> = ["mp3", "m4a", "aac", "m4b", "aif", "aiff", "wav", "caf"]
@@ -62,6 +68,14 @@ struct ReviewedImport: Sendable, Equatable {
     init(library: LibraryStore, defaults: UserDefaults = .standard) {
         self.library = library
         self.defaults = defaults
+        // Keep `cachedLibraryPaths` in step with the library. `$tracks` replays its current value on
+        // subscribe (seeding the cache) and fires on every later change; it's published on the main
+        // actor (both stores are `@MainActor`), so `assumeIsolated` reaches our isolated state safely.
+        library.$tracks
+            .sink { [weak self] tracks in
+                MainActor.assumeIsolated { self?.cachedLibraryPaths = Self.resolveLibraryPaths(tracks) }
+            }
+            .store(in: &cancellables)
     }
 
     // Runs on the main actor (the class is `@MainActor`) so it can reach the isolated watch state;
@@ -150,7 +164,21 @@ struct ReviewedImport: Sendable, Equatable {
         let known = libraryPaths().union(pendingPaths())
         for entry in entries where Self.isAudioFile(entry) {
             guard !known.contains(entry.standardizedFileURL.path) else { continue }
-            ingest(url: entry)
+            ingestWhenStable(entry)
+        }
+    }
+
+    /// A file that just appeared may still be mid-copy when the directory-write event fires. Sample
+    /// its size, wait briefly, and re-sample; ingest only once the size has settled, so `AVAsset`
+    /// never reads a half-written file. A still-growing (or vanished) file is skipped — a later write
+    /// event re-runs the scan and catches it once complete. `ingest` de-dups by path, so the extra
+    /// scans an in-flight copy fires can't double-add it.
+    private func ingestWhenStable(_ url: URL) {
+        let firstSize = Self.fileSize(url)
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(750))
+            guard let self, let firstSize, firstSize == Self.fileSize(url) else { return }
+            self.ingest(url: url)
         }
     }
 
@@ -228,16 +256,28 @@ struct ReviewedImport: Sendable, Equatable {
 
     // MARK: - Helpers
 
-    /// Paths of files already committed to the library. Resolving a bookmark (unlike
+    /// Paths of files already committed to the library — the cached set (recomputed only when
+    /// `library.tracks` changes; see `init`). Used to de-dup ingests against existing tracks.
+    private func libraryPaths() -> Set<String> { cachedLibraryPaths }
+
+    /// Resolve every track's bookmark to a standardized path. Resolving a bookmark (unlike
     /// `startAccessingSecurityScopedResource`) doesn't begin access, so this has no side effects.
-    private func libraryPaths() -> Set<String> {
+    /// `nonisolated`, taking `tracks` by value, so it can run from the `$tracks` sink.
+    nonisolated private static func resolveLibraryPaths(_ tracks: [LocalTrack]) -> Set<String> {
         var paths: Set<String> = []
-        for track in library.tracks {
-            if let (url, _) = Self.resolveScopedBookmark(track.bookmark) {
+        for track in tracks {
+            if let (url, _) = resolveScopedBookmark(track.bookmark) {
                 paths.insert(url.standardizedFileURL.path)
             }
         }
         return paths
+    }
+
+    /// Current byte size of `url` via a fresh `stat` (so two samples reflect real growth, not a URL's
+    /// cached resource value). Nil if the file can't be stat'd — e.g. it vanished mid-copy.
+    nonisolated private static func fileSize(_ url: URL) -> Int? {
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path) else { return nil }
+        return (attrs[.size] as? NSNumber)?.intValue
     }
 
     private func pendingPaths() -> Set<String> {

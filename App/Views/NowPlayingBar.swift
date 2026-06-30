@@ -138,7 +138,7 @@ struct NowPlayingBar: View {
         let played = np.duration > 0 ? min(max(np.elapsed / np.duration, 0), 1) : 0
         let fraction = dragFraction ?? played
         HStack(spacing: 7) {
-            Text(Self.timeLabel(dragFraction.map { $0 * np.duration } ?? np.elapsed))
+            Text(TimeFormat.label(dragFraction.map { $0 * np.duration } ?? np.elapsed))
                 .font(.system(size: 9, weight: .medium).monospacedDigit())
                 .foregroundStyle(tokens.muted).fixedSize()
             GeometryReader { geo in
@@ -163,16 +163,9 @@ struct NowPlayingBar: View {
                 )
             }
             .frame(height: 12)
-            Text(Self.timeLabel(np.duration))
+            Text(TimeFormat.label(np.duration))
                 .font(.system(size: 9, weight: .medium).monospacedDigit())
                 .foregroundStyle(tokens.muted).fixedSize()
         }
-    }
-
-    /// `mm:ss` formatter for the scrubber labels (e.g. 92 → "1:32", 760 → "12:40").
-    private static func timeLabel(_ seconds: Double) -> String {
-        guard seconds.isFinite, seconds >= 0 else { return "0:00" }
-        let total = Int(seconds.rounded(.down))
-        return String(format: "%d:%02d", total / 60, total % 60)
     }
 }

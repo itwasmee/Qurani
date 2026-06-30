@@ -5,7 +5,10 @@ import Foundation
     @Published public private(set) var nowPlaying: NowPlaying?
     /// Identity of the item currently loaded, independent of display title.
     /// Used to drive the row highlight (duplicate titles must not collide).
-    /// Format: `"live:<station.id>"` or `"ondemand:<reciterID>:<moshafID>:<surahNumber>"`.
+    /// Format (one of three, per `PlaybackItem.sourceID`):
+    ///   • `"live:<station.id>"`
+    ///   • `"ondemand:<reciterID>:<moshafID>:<surahNumber>"`
+    ///   • `"local:<track.id>"`   (the `LocalTrack`'s UUID; `NowPlayingBar` keys the 📚 chip on this prefix)
     @Published public private(set) var currentSourceID: String?
     @Published public var volume: Float = 1.0 { didSet { player.volume = volume } }
 
