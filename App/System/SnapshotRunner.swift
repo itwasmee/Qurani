@@ -64,7 +64,8 @@ import QuraniKit
                                    pool: MixPoolStore(directory: tmp),
                                    library: library, importer: LibraryImporter(library: library),
                                    surahs: [],
-                                   play: { _, _, _ in }, playLocal: { _ in })   // Live tab shown; others unused here
+                                   play: { _, _, _ in }, playLocal: { _ in },
+                                   commitImports: { _ in })   // Live tab shown; others unused here
                 .environment(\.colorScheme, isDark ? .dark : .light)  // fallback if @AppStorage is unset
                 .background(Tokens.of(resolved).bg)                   // opaque backing for the vibrancy gap
             let path = "\(outDir)/panel-\(raw).png"
@@ -83,6 +84,10 @@ import QuraniKit
 
         // Library tab (Noor): three reciters grouped, a few surahs each, one local file playing.
         renderLibrary(outDir: outDir, written: &written)
+
+        // Tagger review sheet (Noor): four pending imports — one high-confidence ✓, one amber
+        // (blank reciter, low-confidence guess).
+        renderTaggerReview(outDir: outDir, written: &written)
 
         // Now-playing bar mid-on-demand (scrubber + mm:ss labels), both themes.
         renderNowPlaying(outDir: outDir, written: &written)
@@ -180,6 +185,35 @@ import QuraniKit
                                   surahs: surahs, tokens: noor, playLocal: { _ in })
             .frame(width: 344).background(noor.bg)
         let path = "\(outDir)/library.png"
+        if writePNG(view, to: path) { written.append(path) }
+    }
+
+    /// Renders the Task 7 tagger review sheet in Noor with four seeded pending imports, mirroring the
+    /// mockup: two confident rows (✓), one amber row (blank reciter + low-confidence guess, shown
+    /// "needs review"), and one medium row (~ chip). Pending imports are injected via the importer's
+    /// `seedPending` seam; synthetic `Data()` bookmarks never resolve, but the sheet only displays the
+    /// guesses and edits — it never commits or plays here.
+    private static func renderTaggerReview(outDir: String, written: inout [String]) {
+        let noor = Tokens.of(.noor)
+        let surahs = (try? QuranData.loadSurahs()) ?? []
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let library = LibraryStore(directory: tmp)
+        let importer = LibraryImporter(library: library); importer.surahs = surahs
+        func pending(_ name: String, reciter: String?, surah: Int?, confidence: Double, _ ms: Int?) -> PendingImport {
+            PendingImport(url: URL(fileURLWithPath: "/Music/Qurani/\(name)"), bookmark: Data(),
+                          guess: Tagger.Guess(reciterName: reciter, surahNumber: surah, confidence: confidence),
+                          durationMs: ms)
+        }
+        importer.seedPending([
+            pending("002-husary.mp3", reciter: "Mahmoud Al-Husary", surah: 2, confidence: 0.9, 1_082_000),
+            pending("sudais-018-alkahf.mp3", reciter: "Sudais", surah: 18, confidence: 0.9, 2_292_000),
+            pending("track 12.mp3", reciter: nil, surah: 23, confidence: 0.3, 760_000),       // amber: blank reciter
+            pending("alfatiha-basit.mp3", reciter: "Abdul Basit", surah: 1, confidence: 0.5, 96_000),
+        ])
+        let view = TaggerReviewView(importer: importer, surahs: surahs, tokens: noor, commit: { _ in })
+            .frame(width: 344, height: 560)   // tall enough that all four seeded rows sit above the fold
+            .background(noor.bg)
+        let path = "\(outDir)/tagger-review.png"
         if writePNG(view, to: path) { written.append(path) }
     }
 

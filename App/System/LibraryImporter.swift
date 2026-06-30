@@ -191,6 +191,12 @@ struct ReviewedImport: Sendable, Equatable {
         pendingImports.removeAll { ids.contains($0.id) }
     }
 
+    /// Seed `pendingImports` directly, bypassing the ingest pipeline — for snapshots / tests of the
+    /// review sheet (mirrors `CatalogStore.seed` / `SourcesStore.seed`).
+    func seedPending(_ imports: [PendingImport]) {
+        pendingImports = imports
+    }
+
     // MARK: - Metadata
 
     /// Load common `title`/`artist`/`album` tags and a millisecond duration off the main actor.

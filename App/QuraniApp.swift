@@ -19,7 +19,8 @@ struct QuraniApp: App {
                        library: model.library, importer: model.importer,
                        surahs: model.surahs,
                        play: { model.playOnDemand(reciter: $0, moshaf: $1, surah: $2) },
-                       playLocal: { model.playLocal($0) })
+                       playLocal: { model.playLocal($0) },
+                       commitImports: { model.commitImports($0) })
                 .task { await model.bootstrap() }
         } label: {
             EqualizerMenuBarLabel(engine: model.engine)

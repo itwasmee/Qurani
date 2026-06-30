@@ -14,6 +14,8 @@ struct GlassPanel: View {
     let surahs: [Surah]
     let play: (Reciter, Moshaf, Surah) -> Void
     let playLocal: (LocalTrack) -> Void
+    /// Commit the Task 7 review sheet's confirmed imports → `AppModel.commitImports`.
+    let commitImports: ([ReviewedImport]) -> Void
     @Environment(\.colorScheme) private var scheme
     // Read the persisted theme directly here: @AppStorage is a reactive DynamicProperty,
     // so changing it from the gear menu re-renders the panel LIVE. (An @AppStorage on
@@ -74,6 +76,14 @@ struct GlassPanel: View {
                 RadialGradient(colors: [tokens.accent.opacity(0.14), .clear],
                                center: .top, startRadius: 0, endRadius: 220)
                     .allowsHitTesting(false)
+            }
+        }
+        // Task 7: the tagger review sheet takes over the panel whenever imports await confirmation.
+        // An overlay (not `.sheet`) — reliable inside a MenuBarExtra `.window` popover — and it
+        // matches the mockup, which replaces the whole panel surface.
+        .overlay {
+            if !importer.pendingImports.isEmpty {
+                TaggerReviewView(importer: importer, surahs: surahs, tokens: tokens, commit: commitImports)
             }
         }
         .preferredColorScheme(theme == .system ? nil : (resolved == .sahar ? .light : .dark))
