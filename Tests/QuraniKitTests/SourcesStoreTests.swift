@@ -14,3 +14,12 @@ import Foundation
     await store.loadReciterStations { json }
     #expect(store.reciterStations.first?.url.host == "qurango.net")
 }
+
+@MainActor @Test func reciterStationsEmptyOnFetchFailure() async throws {
+    let store = SourcesStore()
+    try store.loadFeatured()
+    struct Boom: Error {}
+    await store.loadReciterStations { throw Boom() }
+    #expect(store.reciterStations.isEmpty)
+    #expect(store.featured.contains { $0.id == "makkah_haram" })
+}

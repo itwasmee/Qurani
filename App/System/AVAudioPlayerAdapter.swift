@@ -1,17 +1,20 @@
 import AVFoundation
 import QuraniKit
 
-@MainActor final class AVAudioPlayerAdapter: NSObject, AudioPlayer, AVPlayerItemMetadataOutputPushDelegate {
+@MainActor final class AVAudioPlayerAdapter: NSObject, AudioPlayer, @preconcurrency AVPlayerItemMetadataOutputPushDelegate {
     var onStatus: ((Bool) -> Void)?
     var onStreamTitle: ((String) -> Void)?
     var volume: Float = 1.0 { didSet { player.volume = volume } }
 
     private let player = AVPlayer()
-    private var timeObserver: Any?
+    private var statusObservation: NSKeyValueObservation?
 
     override init() {
         super.init()
-        player.addObserver(self, forKeyPath: "timeControlStatus", options: [.new], context: nil)
+        statusObservation = player.observe(\.timeControlStatus, options: [.new]) { [weak self] player, _ in
+            let playing = player.timeControlStatus == .playing
+            Task { @MainActor in self?.onStatus?(playing) }
+        }
     }
 
     func replace(url: URL) {
@@ -24,18 +27,25 @@ import QuraniKit
     func play() { player.play() }
     func pause() { player.pause() }
 
-    override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
-        if keyPath == "timeControlStatus" {
-            onStatus?(player.timeControlStatus == .playing)
+    // The metadata delegate queue is `.main` (see `replace`), so callbacks arrive on the main
+    // actor. The `@preconcurrency` on the protocol conformance (above) lets this `@MainActor`
+    // method satisfy the otherwise-nonisolated delegate requirement, with a runtime main-actor
+    // check that genuinely holds. Main-actor isolation keeps the non-Sendable `AVMetadataItem`s
+    // confined to the main actor across the async string load; only the resulting `String` ever
+    // reaches `onStreamTitle`. `.stringValue` is deprecated, so we use async `load(.stringValue)`.
+    func metadataOutput(_ output: AVPlayerItemMetadataOutput,
+                        didOutputTimedMetadataGroups groups: [AVTimedMetadataGroup],
+                        from track: AVPlayerItemTrack?) {
+        let candidates = groups.flatMap(\.items).filter {
+            $0.commonKey?.rawValue == "title" || ($0.identifier?.rawValue.contains("StreamTitle") == true)
         }
-    }
-
-    nonisolated func metadataOutput(_ output: AVPlayerItemMetadataOutput,
-                                    didOutputTimedMetadataGroups groups: [AVTimedMetadataGroup],
-                                    from track: AVPlayerItemTrack?) {
-        let title = groups.flatMap(\.items)
-            .first { ($0.commonKey?.rawValue == "title") || ($0.identifier?.rawValue.contains("StreamTitle") == true) }?
-            .stringValue
-        if let title { Task { @MainActor in self.onStreamTitle?(title) } }
+        Task { @MainActor in
+            for item in candidates {
+                if let title = try? await item.load(.stringValue) {
+                    self.onStreamTitle?(title)
+                    return
+                }
+            }
+        }
     }
 }
