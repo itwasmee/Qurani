@@ -5,6 +5,9 @@ import QuraniKit
 @MainActor final class AppModel: ObservableObject {
     let engine: PlaybackEngine
     let sources: SourcesStore
+    let catalog = CatalogStore()
+    let favorites = FavoritesStore()
+    let pool = MixPoolStore()
     @Published var surahs: [Surah] = []
 
     // App-lifetime singletons: created exactly once in `init` (see C1). `bootstrap()`
@@ -40,5 +43,13 @@ import QuraniKit
         engine.attachSurahs(surahs)
         try? sources.loadFeatured()
         await sources.loadReciterStations { try await SourcesStore.fetchRadios() }
+        await catalog.load { try await CatalogStore.fetchReciters() }
+    }
+
+    /// Start finite playback of a single surah recitation. Builds the per-surah audio URL
+    /// from the moshaf's server base, then hands a `.onDemand` item to the engine.
+    func playOnDemand(reciter: Reciter, moshaf: Moshaf, surah: Surah) {
+        let url = CatalogService.audioURL(serverBase: moshaf.serverBase, surah: surah.number)
+        engine.play(.onDemand(reciterName: reciter.name, surah: surah, url: url))
     }
 }
