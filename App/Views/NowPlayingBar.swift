@@ -4,6 +4,12 @@ import QuraniKit
 struct NowPlayingBar: View {
     @ObservedObject var engine: PlaybackEngine
     let tokens: Tokens
+    /// A random-Mix session is active → swap the ⤮ MIX source chip in for the LIVE / 📚 LIBRARY tag
+    /// and show the "up next" hint. Passed from `GlassPanel` (which owns the `AppModel`).
+    var isMixing: Bool = false
+    /// The reciter + surah of the item that plays after the current mix item, already resolved to
+    /// display names by `GlassPanel`. Nil at the tail of the queue (or when not mixing).
+    var upNext: (memberName: String, surahName: String)? = nil
     /// Fraction (0…1) under the finger while scrubbing, so the thumb tracks the drag
     /// immediately instead of waiting for the engine's next reported position. `nil` when
     /// not dragging — the track then follows `nowPlaying.elapsed/duration`.
@@ -69,6 +75,18 @@ struct NowPlayingBar: View {
                             Text("LIVE").font(.system(size: 8, weight: .heavy)).foregroundStyle(.white)
                                 .padding(.horizontal, 5).padding(.vertical, 2)
                                 .background(.red, in: RoundedRectangle(cornerRadius: 5))
+                        } else if isMixing {
+                            // The mockup's ⤮ MIX chip; the ⤮ glyph isn't in SF Pro, so the native
+                            // `shuffle` SF Symbol stands in (same shuffle/mix concept, matches the
+                            // build view's "Shuffle"). Live keeps precedence so a stale flag can't
+                            // mask a live station's LIVE pill.
+                            HStack(spacing: 3) {
+                                Image(systemName: "shuffle").font(.system(size: 7.5, weight: .heavy))
+                                Text("MIX").font(.system(size: 8, weight: .heavy))
+                            }
+                            .foregroundStyle(tokens.accent)
+                            .padding(.horizontal, 5).padding(.vertical, 2)
+                            .background(tokens.accent.opacity(0.16), in: RoundedRectangle(cornerRadius: 5))
                         } else if isLocal {
                             Text("📚 LIBRARY").font(.system(size: 8, weight: .heavy)).foregroundStyle(tokens.gold)
                                 .padding(.horizontal, 5).padding(.vertical, 2)
@@ -87,6 +105,7 @@ struct NowPlayingBar: View {
                 }
                 .buttonStyle(.plain)
             }
+            if isMixing, let upNext { upNextLine(upNext) }
             // On-demand items have a finite length → offer a draggable scrubber. Live keeps
             // only the red LIVE pill (set above) and shows no progress control.
             if !np.isLive, np.duration > 0 { scrubber(np) }
@@ -100,6 +119,17 @@ struct NowPlayingBar: View {
             }
         }
         .overlay(alignment: .top) { Rectangle().fill(tokens.text.opacity(0.10)).frame(height: 1) }
+    }
+
+    /// The "up next · random" hint shown under the title during a mix: the reciter + surah of the
+    /// item the session advances to when the current one finishes.
+    @ViewBuilder private func upNextLine(_ next: (memberName: String, surahName: String)) -> some View {
+        HStack(spacing: 6) {
+            Text("Up next · random").font(.system(size: 9, weight: .semibold)).foregroundStyle(tokens.accent)
+            Text("\(next.memberName) — \(next.surahName)")
+                .font(.system(size: 9.5)).foregroundStyle(tokens.muted).lineLimit(1)
+            Spacer(minLength: 0)
+        }
     }
 
     /// Thin, draggable progress track for on-demand playback. Dragging seeks the engine

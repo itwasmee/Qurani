@@ -49,10 +49,12 @@ import QuraniKit
         let reciters = (try? RadiosService.decode(reciterJSON)) ?? []
         var written: [String] = []
 
-        // A throwaway root model purely to satisfy GlassPanel's initializer — the snapshot renders
-        // the Live tab, so the Mix tab (the only consumer of `model`) is never built. Created once so
+        // A throwaway root model that satisfies GlassPanel's initializer (Live-tab panels) and backs
+        // the Mix renders below. Its persisted stores point at a throwaway directory, so seeding them
+        // for the Mix build panel never reads or mutates real user data. Created once so
         // `Hotkeys.register` doesn't run per iteration.
-        let snapshotModel = AppModel()
+        let snapshotTmp = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let snapshotModel = AppModel(storesDirectory: snapshotTmp)
 
         // GlassPanel in both Noor (dark) and Sahar (light), Makkah playing.
         for (raw, isDark) in [("noor", true), ("sahar", false)] {
@@ -96,6 +98,10 @@ import QuraniKit
 
         // Now-playing bar mid-on-demand (scrubber + mm:ss labels), both themes.
         renderNowPlaying(outDir: outDir, written: &written)
+
+        // Mix tab (Noor): the build panel (seeded pool candidates) + the playing queue (a seeded
+        // session via `seedMix`, the first row highlighted). Reuses `snapshotModel` (tmp-dir stores).
+        renderMix(model: snapshotModel, outDir: outDir, written: &written)
 
         let log = written.isEmpty
             ? "Qurani snapshot: ImageRenderer produced no images (headless render unsupported).\n"
@@ -239,6 +245,80 @@ import QuraniKit
                 .frame(width: 344).background(Tokens.of(theme).bg)
             let path = "\(outDir)/nowplaying-\(raw).png"
             if writePNG(bar, to: path) { written.append(path) }
+        }
+    }
+
+    /// Renders the Mix tab in Noor in both states, reusing `model` (its stores point at a throwaway
+    /// directory): the **build** panel — seeded on-demand candidates (two pooled → pre-checked, one
+    /// favorited → unchecked) plus local candidates — and the **playing** queue, seeded directly via
+    /// `AppModel.seedMix` (no engine) with the first row highlighted. The build render runs first
+    /// since `seedMix` flips `isMixing`, which switches the view to the playing branch.
+    private static func renderMix(model: AppModel, outDir: String, written: inout [String]) {
+        let noor = Tokens.of(.noor)
+        let surahs = (try? QuranData.loadSurahs()) ?? []
+        let base = URL(string: "https://server.example/")!
+
+        // Build: seed catalog + pool/favorites (on-demand candidates) + library (local candidates).
+        func onDemand(_ id: Int, _ name: String) -> Reciter {
+            Reciter(id: id, name: name,
+                    moshafs: [Moshaf(id: id * 10, name: "Hafs", serverBase: base, surahNumbers: Array(1...114))])
+        }
+        model.catalog.seed(reciters: [onDemand(1, "Mishary Alafasy"),
+                                      onDemand(2, "Saad Al-Ghamdi"),
+                                      onDemand(3, "Maher Al-Muaiqly")])
+        model.pool.toggle(reciter: 1); model.pool.toggle(reciter: 2)   // pooled → pre-checked
+        model.favorites.toggle(reciter: 3)                              // favorited → candidate, unchecked
+        func local(_ reciter: String, _ surah: Int) -> LocalTrack {
+            LocalTrack(bookmark: Data(), reciterName: reciter, surahNumber: surah, confidence: 1.0, durationMs: 600_000)
+        }
+        model.library.add([local("Mahmoud Al-Husary", 2),
+                           local("Abdul Rahman Al-Sudais", 1),
+                           local("Abdul Basit Abdul Samad", 36)])
+        let build = MixTabView(model: model, tokens: noor)
+            .frame(width: 344, height: 470).background(noor.bg)
+        let buildPath = "\(outDir)/mix-build.png"
+        if writePNG(build, to: buildPath) { written.append(buildPath) }
+
+        // Playing: seed a small queue + its pool directly (no real audio); first row highlighted.
+        model.surahs = surahs
+        let pool: [PoolMember] = [
+            PoolMember(id: "local:Sudais", source: .local, displayName: "Abdul Rahman Al-Sudais",
+                       reciterName: "Abdul Rahman Al-Sudais", surahNumbers: [1, 6], reciterID: nil, moshaf: nil),
+            PoolMember(id: "local:Basit", source: .local, displayName: "Abdul Basit Abdul Samad",
+                       reciterName: "Abdul Basit Abdul Samad", surahNumbers: [2, 5], reciterID: nil, moshaf: nil),
+            PoolMember(id: "od:1", source: .onDemand, displayName: "Mishary Alafasy",
+                       reciterName: "Mishary Alafasy", surahNumbers: [3], reciterID: 1, moshaf: nil),
+            PoolMember(id: "od:2", source: .onDemand, displayName: "Saad Al-Ghamdi",
+                       reciterName: "Saad Al-Ghamdi", surahNumbers: [4], reciterID: 2, moshaf: nil),
+        ]
+        let queue = [MixQueueItem(surah: 1, memberID: "local:Sudais"),
+                     MixQueueItem(surah: 2, memberID: "local:Basit"),
+                     MixQueueItem(surah: 3, memberID: "od:1"),
+                     MixQueueItem(surah: 4, memberID: "od:2"),
+                     MixQueueItem(surah: 5, memberID: "local:Basit"),
+                     MixQueueItem(surah: 6, memberID: "local:Sudais")]
+        model.seedMix(queue: queue, pool: pool, index: 0)
+        let playing = MixTabView(model: model, tokens: noor)
+            .frame(width: 344).background(noor.bg)
+        let playingPath = "\(outDir)/mix-playing.png"
+        if writePNG(playing, to: playingPath) { written.append(playingPath) }
+
+        // The now-playing bar during a mix (Noor): the ⤮ MIX source chip + the "up next · random"
+        // hint + the on-demand scrubber. A `SnapshotPlayer` lets the item reach `.playing`; feeding
+        // `onTime(32, 90)` fills the scrubber (0:32 of 1:30) without real audio.
+        if let s1 = surahs.first(where: { $0.number == 1 }) {
+            let player = SnapshotPlayer()
+            let engine = PlaybackEngine(player: player)
+            engine.attachSurahs(surahs)
+            engine.play(.onDemand(reciterID: 1, reciterName: "Abdul Rahman Al-Sudais",
+                                  moshafID: 1, surah: s1, url: CatalogService.audioURL(serverBase: base, surah: 1)))
+            player.onTime?(32, 90)
+            let upNext = (memberName: "Abdul Basit Abdul Samad",
+                          surahName: surahs.first { $0.number == 2 }?.nameAr ?? "Surah 2")
+            let bar = NowPlayingBar(engine: engine, tokens: noor, isMixing: true, upNext: upNext)
+                .frame(width: 344).background(noor.bg)
+            let barPath = "\(outDir)/mix-nowplaying.png"
+            if writePNG(bar, to: barPath) { written.append(barPath) }
         }
     }
 

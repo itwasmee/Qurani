@@ -6,9 +6,9 @@ import QuraniKit
     let engine: PlaybackEngine
     let sources: SourcesStore
     let catalog = CatalogStore()
-    let favorites = FavoritesStore()
-    let pool = MixPoolStore()
-    let library = LibraryStore()
+    let favorites: FavoritesStore
+    let pool: MixPoolStore
+    let library: LibraryStore
     /// Owns the import pipeline (Add-files panel, drag-drop, watched folder). Holds the
     /// `pendingImports` the review sheet (Task 7) confirms; observe it directly from views.
     let importer: LibraryImporter
@@ -21,11 +21,23 @@ import QuraniKit
     private var cancellables: Set<AnyCancellable> = []
     private var didLoad = false
 
-    init() {
+    /// `storesDirectory` redirects the persisted stores (favorites / pool / library) to a given
+    /// directory — nil uses the real Application Support path. Snapshots and tests pass a throwaway
+    /// directory so rendering the Mix/Library/Explore tabs never reads or mutates the user's data.
+    init(storesDirectory: URL? = nil) {
         let engine = PlaybackEngine(player: AVAudioPlayerAdapter())
         self.engine = engine
         self.sources = SourcesStore()
         self.bridge = NowPlayingBridge(engine: engine)
+        if let dir = storesDirectory {
+            self.favorites = FavoritesStore(directory: dir)
+            self.pool = MixPoolStore(directory: dir)
+            self.library = LibraryStore(directory: dir)
+        } else {
+            self.favorites = FavoritesStore()
+            self.pool = MixPoolStore()
+            self.library = LibraryStore()
+        }
         self.importer = LibraryImporter(library: library)
 
         // Register media-key / remote-command targets and the global hotkey once.
@@ -56,6 +68,7 @@ import QuraniKit
     /// Start finite playback of a single surah recitation. Builds the per-surah audio URL
     /// from the moshaf's server base, then hands a `.onDemand` item to the engine.
     func playOnDemand(reciter: Reciter, moshaf: Moshaf, surah: Surah) {
+        if isMixing { stopMix() }   // an explicit single play ends any active random-mix session
         let url = CatalogService.audioURL(serverBase: moshaf.serverBase, surah: surah.number)
         engine.play(.onDemand(reciterID: reciter.id, reciterName: reciter.name,
                               moshafID: moshaf.id, surah: surah, url: url))
@@ -66,6 +79,7 @@ import QuraniKit
     /// moved or been deleted resolves to `nil` and is a no-op rather than a crash.
     func playLocal(_ track: LocalTrack) {
         guard let url = library.resolveURL(track) else { return }
+        if isMixing { stopMix() }   // an explicit single play ends any active random-mix session
         engine.play(.localTrack(track: track, url: url))
     }
 
@@ -95,10 +109,12 @@ import QuraniKit
     @Published var isMixing = false
     /// The resolved per-surah playback order for the current session; empty when not mixing.
     @Published private(set) var mixQueue: [MixQueueItem] = []
-    /// Index into `mixQueue` of the item currently playing.
-    private var mixIndex = 0
-    /// Config + pool the session was started with, retained so `rerollMix()` can rebuild.
-    private var mixConfig = MixConfig()
+    /// Index into `mixQueue` of the item currently playing. Published so the Mix playing list can
+    /// highlight (and follow) the active row as the session advances.
+    @Published private(set) var mixIndex = 0
+    /// Config + pool the session was started with, retained so `rerollMix()` can rebuild. `mixConfig`
+    /// is readable so the playing header can label the order + range.
+    private(set) var mixConfig = MixConfig()
     private var mixPool: [PoolMember] = []
 
     /// Surah + member display-name of the item that plays after the current one, or nil at the
@@ -107,9 +123,13 @@ import QuraniKit
         let next = mixIndex + 1
         guard mixQueue.indices.contains(next) else { return nil }
         let item = mixQueue[next]
-        let name = mixPool.first { $0.id == item.memberID }?.displayName ?? item.memberID
+        let name = mixMember(item.memberID)?.displayName ?? item.memberID
         return (surah: item.surah, memberName: name)
     }
+
+    /// The pool member assigned to a queue row, by id — lets the Mix playing list render each row's
+    /// reciter `displayName` + source badge. Nil if the id isn't in the current pool.
+    func mixMember(_ id: String) -> PoolMember? { mixPool.first { $0.id == id } }
 
     /// Assemble the mix pool from the user's selections: one on-demand member per catalog reciter
     /// in `onDemandIDs` (using its first/primary moshaf), plus one local member per library reciter
@@ -212,5 +232,14 @@ import QuraniKit
         mixQueue = MixEngine.buildQueue(pool: mixPool, config: mixConfig, surahJuz: surahJuz,
                                         pickIndex: { Int.random(in: 0..<$0) },
                                         shuffle: { $0.shuffled() })
+    }
+
+    /// Seed an active Mix session's display state directly, bypassing `startMix` (no engine, no
+    /// audio) — for snapshots / tests of the playing list. Mirrors `LibraryImporter.seedPending`.
+    func seedMix(queue: [MixQueueItem], pool: [PoolMember], index: Int) {
+        mixPool = pool
+        mixQueue = queue
+        mixIndex = index
+        isMixing = true
     }
 }

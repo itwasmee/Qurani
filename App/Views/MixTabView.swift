@@ -45,7 +45,7 @@ struct MixTabView: View {
 
     var body: some View {
         if model.isMixing {
-            playingPlaceholder
+            playingBody
         } else {
             buildBody
         }
@@ -198,23 +198,109 @@ struct MixTabView: View {
         .padding(.horizontal, 13).padding(.vertical, 14)
     }
 
-    // MARK: - Playing placeholder (Task 5 replaces this)
+    // MARK: - Playing (queue)
+    //
+    // The mockup's right panel: a header labelling the running station (order + qari count + range)
+    // with a Re-roll chip, then the resolved `mixQueue` as a scrollable list — each row a Style-B
+    // `SurahNameView` (medallion + Amiri name + the assigned reciter on the subtitle line) with a
+    // compact source badge, the item at `mixIndex` highlighted with the equalizer. There's no in-tab
+    // Stop control (the mockup has none); an explicit play elsewhere ends the session (see AppModel).
 
-    private var playingPlaceholder: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "shuffle").font(.system(size: 26)).foregroundStyle(tokens.accent)
-            Text("Mix playing").font(.system(size: 14, weight: .semibold)).foregroundStyle(tokens.text)
-            Text("See the now-playing bar below").font(.system(size: 11)).foregroundStyle(tokens.muted)
-            Button(action: { model.stopMix() }) {
-                Text("Stop mix").font(.system(size: 11, weight: .semibold)).foregroundStyle(tokens.accent)
-                    .padding(.horizontal, 14).padding(.vertical, 6)
-                    .background(tokens.accent.opacity(0.14), in: Capsule())
-            }
-            .buttonStyle(.plain)
-            .padding(.top, 4)
+    private var playingBody: some View {
+        VStack(spacing: 0) {
+            playingHeader
+            queueList
         }
-        .frame(maxWidth: .infinity).frame(height: 300).padding()
     }
+
+    private var playingHeader: some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Random Mix · \(orderLabel)")
+                    .font(.system(size: 13, weight: .bold)).foregroundStyle(tokens.text)
+                Text("\(qariCount) qaris · \(rangeLabel)")
+                    .font(.system(size: 10)).foregroundStyle(tokens.muted)
+            }
+            Spacer(minLength: 6)
+            rerollButton
+        }
+        .padding(.horizontal, 13).padding(.top, 6).padding(.bottom, 8)
+    }
+
+    private var rerollButton: some View {
+        Button(action: { model.rerollMix() }) {
+            HStack(spacing: 6) {
+                Image(systemName: "dice").font(.system(size: 12, weight: .semibold))
+                Text("Re-roll").font(.system(size: 11, weight: .semibold))
+            }
+            .foregroundStyle(tokens.accent)
+            .padding(.horizontal, 11).padding(.vertical, 6)
+            .background(tokens.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 9))
+        }
+        .buttonStyle(.plain)
+        .help("Re-roll — reshuffle the surah order and the reciter assigned to each surah")
+    }
+
+    private var queueList: some View {
+        ScrollView {
+            LazyVStack(spacing: 2) {
+                ForEach(Array(model.mixQueue.enumerated()), id: \.element.id) { index, item in
+                    queueRow(item, playing: index == model.mixIndex)
+                }
+            }
+            .padding(.horizontal, 8).padding(.bottom, 6)
+        }
+        .frame(height: 300)
+    }
+
+    private func queueRow(_ item: MixQueueItem, playing: Bool) -> some View {
+        let surah = model.surahs.first { $0.number == item.surah }
+        let member = model.mixMember(item.memberID)
+        return HStack(spacing: 6) {
+            SurahNameView(number: item.surah,
+                          nameAr: surah?.nameAr ?? "Surah \(item.surah)",
+                          translit: member?.displayName ?? item.memberID,
+                          tokens: tokens, playing: playing)
+            sourceBadge(member?.source)
+        }
+        .padding(.vertical, 6).padding(.horizontal, 9)
+        .background(playing ? tokens.accent.opacity(0.10) : .clear, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12)
+            .stroke(tokens.accent.opacity(playing ? 0.22 : 0), lineWidth: 1))
+    }
+
+    /// Compact source chip on a queue row: 📚 (local) or ☁︎ (on-demand). The mockup uses the bare
+    /// glyph here (vs. the build view's labelled "📚 LOCAL" / "☁︎ ON-DEMAND" `PoolRow` badge) to keep
+    /// the dense list legible; the gold / blue tints match `PoolRow`.
+    @ViewBuilder private func sourceBadge(_ source: PoolSource?) -> some View {
+        if let source {
+            let isLocal = source == .local
+            Text(isLocal ? "📚" : "☁︎")
+                .font(.system(size: 10))
+                .padding(.horizontal, 5).padding(.vertical, 3)
+                .background((isLocal ? tokens.gold : Color(hex: 0x78c8ff)).opacity(tokens.isDark ? 0.16 : 0.20),
+                            in: RoundedRectangle(cornerRadius: 5))
+                .fixedSize()
+        }
+    }
+
+    private var orderLabel: String {
+        switch model.mixConfig.order {
+        case .inOrder: return "In order"
+        case .shuffle: return "Shuffle"
+        }
+    }
+
+    private var rangeLabel: String {
+        switch model.mixConfig.range {
+        case .full: return "full Qur'an"
+        case .juz(let n): return "Juz' \(n)"
+        case .custom(let r): return "Surah \(r.lowerBound)–\(r.upperBound)"
+        }
+    }
+
+    /// Distinct reciters featured across the current queue (the "N qaris" subtitle count).
+    private var qariCount: Int { Set(model.mixQueue.map(\.memberID)).count }
 
     // MARK: - Candidates + selection
 

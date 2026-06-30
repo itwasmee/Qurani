@@ -3,10 +3,10 @@ import AppKit
 import QuraniKit
 
 struct GlassPanel: View {
-    /// The root model — held (not observed) so the Mix tab can call `buildPool`/`startMix` and
-    /// derive its own `@ObservedObject` child stores. Its child stores are still observed
-    /// individually below, since AppModel doesn't forward their changes.
-    let model: AppModel
+    /// The root model — observed so the Mix session state it owns (`isMixing` / `mixUpNext`) drives
+    /// the now-playing ⤮ MIX chip + "up next" hint live. The Mix tab also calls `buildPool`/`startMix`
+    /// on it and derives its own `@ObservedObject` child stores (AppModel doesn't forward those).
+    @ObservedObject var model: AppModel
     @ObservedObject var sources: SourcesStore
     @ObservedObject var engine: PlaybackEngine
     // Explore stores observed directly here so they republish into the panel — AppModel
@@ -31,6 +31,14 @@ struct GlassPanel: View {
     private var theme: Theme { Theme(rawValue: themeRaw) ?? .system }
     private var resolved: ResolvedTheme { theme.resolved(systemIsDark: scheme == .dark) }
     private var tokens: Tokens { Tokens.of(resolved) }
+
+    /// Resolve `model.mixUpNext` (surah number + member name) into the display strings the
+    /// now-playing "up next" hint renders — the surah's Arabic name comes from this panel's `surahs`.
+    private var upNextDisplay: (memberName: String, surahName: String)? {
+        guard let next = model.mixUpNext else { return nil }
+        let name = surahs.first { $0.number == next.surah }?.nameAr ?? "Surah \(next.surah)"
+        return (memberName: next.memberName, surahName: name)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -70,7 +78,8 @@ struct GlassPanel: View {
                 }
             }
 
-            NowPlayingBar(engine: engine, tokens: tokens)
+            NowPlayingBar(engine: engine, tokens: tokens,
+                          isMixing: model.isMixing, upNext: upNextDisplay)
         }
         .frame(width: 344)
         .background {
