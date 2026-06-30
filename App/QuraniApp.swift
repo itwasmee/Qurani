@@ -16,7 +16,7 @@ struct QuraniApp: App {
         MenuBarExtra {
             GlassPanel(model: model, sources: model.sources, engine: model.engine,
                        catalog: model.catalog, favorites: model.favorites, pool: model.pool,
-                       library: model.library, importer: model.importer,
+                       library: model.library, importer: model.importer, settings: model.settings,
                        surahs: model.surahs,
                        play: { model.playOnDemand(reciter: $0, moshaf: $1, surah: $2) },
                        playLocal: { model.playLocal($0) },

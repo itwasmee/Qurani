@@ -12,6 +12,9 @@ import QuraniKit
     /// Owns the import pipeline (Add-files panel, drag-drop, watched folder). Holds the
     /// `pendingImports` the review sheet (Task 7) confirms; observe it directly from views.
     let importer: LibraryImporter
+    /// User preferences shown in the Settings screen (media-keys + auto-import toggles). Persisted
+    /// like the other stores; observed directly by `SettingsView`.
+    let settings: SettingsStore
     @Published var surahs: [Surah] = []
 
     // App-lifetime singletons: created exactly once in `init` (see C1). `bootstrap()`
@@ -33,10 +36,12 @@ import QuraniKit
             self.favorites = FavoritesStore(directory: dir)
             self.pool = MixPoolStore(directory: dir)
             self.library = LibraryStore(directory: dir)
+            self.settings = SettingsStore(directory: dir)
         } else {
             self.favorites = FavoritesStore()
             self.pool = MixPoolStore()
             self.library = LibraryStore()
+            self.settings = SettingsStore()
         }
         self.importer = LibraryImporter(library: library)
 

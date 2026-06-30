@@ -70,6 +70,7 @@ import QuraniKit
                                    catalog: CatalogStore(), favorites: FavoritesStore(directory: tmp),
                                    pool: MixPoolStore(directory: tmp),
                                    library: library, importer: LibraryImporter(library: library),
+                                   settings: SettingsStore(directory: tmp),
                                    surahs: [],
                                    play: { _, _, _ in }, playLocal: { _ in },
                                    commitImports: { _ in })   // Live tab shown; others unused here
@@ -95,6 +96,10 @@ import QuraniKit
         // Tagger review sheet (Noor): four pending imports — one high-confidence ✓, one amber
         // (blank reciter, low-confidence guess).
         renderTaggerReview(outDir: outDir, written: &written)
+
+        // Settings screen (Noor): the full preferences overlay — theme swatches, hotkey recorder,
+        // toggles, library folder, launch-at-login, about.
+        renderSettings(outDir: outDir, written: &written)
 
         // Now-playing bar mid-on-demand (scrubber + mm:ss labels), both themes.
         renderNowPlaying(outDir: outDir, written: &written)
@@ -225,6 +230,23 @@ import QuraniKit
             .frame(width: 344, height: 560)   // tall enough that all four seeded rows sit above the fold
             .background(noor.bg)
         let path = "\(outDir)/tagger-review.png"
+        if writePNG(view, to: path) { written.append(path) }
+    }
+
+    /// Renders the full Settings screen in Noor: the Noor swatch shown selected (its `@AppStorage`
+    /// theme is set first), the hotkey recorder, both toggles, the default library folder, and the
+    /// About/attribution footer. Throwaway stores so nothing reads or mutates real user data. A tall
+    /// frame so every section (through About) sits above the fold for review.
+    private static func renderSettings(outDir: String, written: inout [String]) {
+        UserDefaults.standard.set("noor", forKey: "theme")     // drives SettingsView's @AppStorage swatch
+        let noor = Tokens.of(.noor)
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let library = LibraryStore(directory: tmp)
+        let view = SettingsView(settings: SettingsStore(directory: tmp),
+                                importer: LibraryImporter(library: library),
+                                tokens: noor, onClose: {})
+            .frame(width: 344, height: 620).background(noor.bg)
+        let path = "\(outDir)/settings.png"
         if writePNG(view, to: path) { written.append(path) }
     }
 

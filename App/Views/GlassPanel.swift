@@ -16,6 +16,7 @@ struct GlassPanel: View {
     @ObservedObject var pool: MixPoolStore
     @ObservedObject var library: LibraryStore
     @ObservedObject var importer: LibraryImporter
+    @ObservedObject var settings: SettingsStore
     let surahs: [Surah]
     let play: (Reciter, Moshaf, Surah) -> Void
     let playLocal: (LocalTrack) -> Void
@@ -27,6 +28,9 @@ struct GlassPanel: View {
     // AppModel — an ObservableObject — would NOT republish on change.)
     @AppStorage("theme") private var themeRaw: String = Theme.system.rawValue
     @State private var tab = 0
+    /// Drives the full-panel Settings overlay opened from the header gear (and the ••• menu's
+    /// "Settings…"). Replaces the old inline theme/login gear menu — Settings now owns those.
+    @State private var showingSettings = false
 
     private var theme: Theme { Theme(rawValue: themeRaw) ?? .system }
     private var resolved: ResolvedTheme { theme.resolved(systemIsDark: scheme == .dark) }
@@ -50,7 +54,7 @@ struct GlassPanel: View {
                 Spacer()
                 HStack(spacing: 8) {
                     commandsMenu
-                    settingsMenu
+                    settingsButton
                 }
             }
             .padding(.horizontal, 15).padding(.top, 13).padding(.bottom, 8)
@@ -100,6 +104,14 @@ struct GlassPanel: View {
                 TaggerReviewView(importer: importer, surahs: surahs, tokens: tokens, commit: commitImports)
             }
         }
+        // Plan 5: the gear (and the ••• "Settings…") slides the full Settings screen over the panel,
+        // same overlay mechanism as the tagger review. Drawn after it so an open Settings sits on top.
+        .overlay {
+            if showingSettings {
+                SettingsView(settings: settings, importer: importer, tokens: tokens,
+                             onClose: { showingSettings = false })
+            }
+        }
         .preferredColorScheme(theme == .system ? nil : (resolved == .sahar ? .light : .dark))
     }
 
@@ -120,9 +132,9 @@ struct GlassPanel: View {
             Divider()
             Button(engine.status == .playing ? "Pause" : "Play") { engine.toggle() }
             Divider()
-            // Settings… is a stub — the full preferences window arrives in Plan 5. Disabled so it
-            // reads as "coming soon" rather than a dead no-op (theme + login already live in the gear).
-            Button("Settings…") {}.disabled(true)
+            // Plan 5: opens the full Settings screen (theme, hotkey, media keys, library, login,
+            // about) — the same overlay the gear presents.
+            Button("Settings…") { showingSettings = true }
             Button("Quit Qurani") { NSApplication.shared.terminate(nil) }
                 .keyboardShortcut("q")
         } label: {
@@ -133,36 +145,16 @@ struct GlassPanel: View {
         .fixedSize()
     }
 
-    // MARK: - Settings (theme + launch at login)
+    // MARK: - Settings (gear → full Settings screen)
 
-    private var settingsMenu: some View {
-        Menu {
-            Picker("Theme", selection: $themeRaw) {
-                Text("System").tag(Theme.system.rawValue)
-                Text("Sahar (Light)").tag(Theme.sahar.rawValue)
-                Text("Noor (Dark)").tag(Theme.noor.rawValue)
-                Text("Layl (Night)").tag(Theme.layl.rawValue)
-            }
-            Divider()
-            Toggle("Launch at Login", isOn: launchAtLogin)
-        } label: {
+    /// The header gear now opens the full `SettingsView` overlay (which owns theme + launch-at-login,
+    /// formerly an inline menu here) rather than a small popover menu — one place for every preference,
+    /// matching the mockup.
+    private var settingsButton: some View {
+        Button { showingSettings = true } label: {
             Image(systemName: "gearshape").font(.system(size: 15)).foregroundStyle(tokens.muted)
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-    }
-
-    /// Reads/writes the actual SMAppService state. `register()` throws from unsigned /
-    /// DerivedData builds — that's expected, so we swallow it (the toggle just reverts
-    /// on the next read). See LoginItem.
-    private var launchAtLogin: Binding<Bool> {
-        Binding(
-            get: { LoginItem.isEnabled },
-            set: { on in
-                do { try LoginItem.set(on) }
-                catch { print("Qurani: launch-at-login change failed (expected when unsigned): \(error)") }
-            }
-        )
+        .buttonStyle(.plain)
+        .help("Settings")
     }
 }
