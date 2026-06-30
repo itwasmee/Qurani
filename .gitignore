@@ -1,0 +1,13 @@
+# Brainstorm visual-companion sessions
+.superpowers/
+
+# macOS
+.DS_Store
+
+# Xcode / SwiftPM
+.build/
+DerivedData/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+.swiftpm/
+xcuserdata/
