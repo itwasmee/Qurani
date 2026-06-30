@@ -22,12 +22,27 @@ import QuraniKit
             return .success
         }
     }
-    func update() {
-        guard let np = engine.nowPlaying else { MPNowPlayingInfoCenter.default().nowPlayingInfo = nil; return }
+    /// Reflect the just-emitted now-playing value. `@Published` fires in `willSet`,
+    /// so callers must pass the *new* value — re-reading `engine.nowPlaying` here would
+    /// observe the pre-change value (nil on first play, stale on stop).
+    func update(_ np: NowPlaying?) {
+        guard let np else { MPNowPlayingInfoCenter.default().nowPlayingInfo = nil; return }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = [
             MPMediaItemPropertyTitle: np.surahHint ?? np.title,
             MPMediaItemPropertyArtist: np.subtitle,
             MPNowPlayingInfoPropertyIsLiveStream: np.isLive
         ]
+    }
+
+    /// Mirror the engine status into Control Center's transport state so play/pause
+    /// renders correctly there. Same `willSet` caveat — caller passes the new status.
+    func updatePlaybackState(_ status: PlayerStatus) {
+        let state: MPNowPlayingPlaybackState
+        switch status {
+        case .playing, .loading: state = .playing   // buffering reads as play intent
+        case .paused:            state = .paused
+        case .idle, .failed:     state = .stopped
+        }
+        MPNowPlayingInfoCenter.default().playbackState = state
     }
 }

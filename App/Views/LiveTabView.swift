@@ -11,13 +11,13 @@ struct LiveTabView: View {
             VStack(alignment: .leading, spacing: 2) {
                 section("FEATURED · LIVE")
                 ForEach(sources.featured) { st in
-                    StationRow(station: st, tokens: tokens, isPlaying: engine.nowPlaying?.title == st.name)
+                    StationRow(station: st, tokens: tokens, isPlaying: isPlaying(st))
                         .onTapGesture { engine.play(st) }
                 }
                 if !sources.reciterStations.isEmpty {
                     section("RECITER STATIONS · 24/7")
                     ForEach(sources.reciterStations.prefix(40)) { st in
-                        StationRow(station: st, tokens: tokens, isPlaying: engine.nowPlaying?.title == st.name)
+                        StationRow(station: st, tokens: tokens, isPlaying: isPlaying(st))
                             .onTapGesture { engine.play(st) }
                     }
                 }
@@ -25,6 +25,12 @@ struct LiveTabView: View {
             .padding(.horizontal, 8)
         }
         .frame(height: 300)
+    }
+
+    /// Highlight by station *identity*, and only while actually playing — never
+    /// during `.loading`/`.failed`, and never colliding on duplicate display names.
+    private func isPlaying(_ st: Station) -> Bool {
+        engine.currentStationID == st.id && engine.status == .playing
     }
 
     @ViewBuilder private func section(_ t: String) -> some View {

@@ -3,6 +3,9 @@ import Foundation
 @MainActor public final class PlaybackEngine: ObservableObject {
     @Published public private(set) var status: PlayerStatus = .idle
     @Published public private(set) var nowPlaying: NowPlaying?
+    /// Identity of the station currently loaded, independent of display title.
+    /// Used to drive the row highlight (duplicate station names must not collide).
+    @Published public private(set) var currentStationID: String?
     @Published public var volume: Float = 1.0 { didSet { player.volume = volume } }
 
     private let player: AudioPlayer
@@ -25,6 +28,7 @@ import Foundation
 
     public func play(_ station: Station) {
         current = station
+        currentStationID = station.id
         status = .loading
         nowPlaying = NowPlaying(title: station.name,
                                 subtitle: station.reciter ?? station.region,
@@ -42,5 +46,11 @@ import Foundation
         }
     }
 
-    public func stop() { player.pause(); status = .idle; nowPlaying = nil; current = nil }
+    public func stop() {
+        player.pause()
+        status = .idle
+        nowPlaying = nil
+        current = nil
+        currentStationID = nil
+    }
 }
