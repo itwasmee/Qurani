@@ -6,16 +6,24 @@ import Foundation
     var onStatus: ((Bool) -> Void)?
     var onStreamTitle: ((String) -> Void)?
     var onFailure: ((String) -> Void)?
+    var onTime: ((Double, Double) -> Void)?
+    var onFinish: (() -> Void)?
     var volume: Float = 1.0
     /// When false, `play()`/`pause()` do not auto-confirm, so `.loading` is observable
     /// until the test fires `onStatus` manually.
     var autoConfirm = true
     private(set) var lastURL: URL?
     private(set) var playCount = 0, pauseCount = 0
+    private(set) var lastSeekFraction: Double?
     func replace(url: URL) { lastURL = url }
     func play() { playCount += 1; if autoConfirm { onStatus?(true) } }
     func pause() { pauseCount += 1; if autoConfirm { onStatus?(false) } }
+    func seek(toFraction f: Double) { lastSeekFraction = f }
 }
+
+/// Shared on-demand fixture for the seam tests.
+let testSurah = Surah(number: 67, nameAr: "الْمُلْك", translit: "Al-Mulk", nameEn: "Al-Mulk",
+                      ayahCount: 30, makki: true, juz: 29)
 
 @MainActor @Test func playingStationSetsLoadingThenPlaying() {
     let p = FakePlayer(); let engine = PlaybackEngine(player: p)
@@ -114,4 +122,24 @@ import Foundation
     e.playStation(st)
     #expect(e.currentSourceID == "live:x")
     #expect(e.nowPlaying?.isLive == true)
+}
+
+@MainActor @Test func timeUpdatesPopulateNowPlaying() {
+    let p = FakePlayer(); let e = PlaybackEngine(player: p)
+    e.play(.onDemand(reciterName: "R", surah: testSurah, url: URL(string:"https://e/1.mp3")!))
+    p.onTime?(12, 60)
+    #expect(e.nowPlaying?.elapsed == 12); #expect(e.nowPlaying?.duration == 60)
+}
+
+@MainActor @Test func seekDelegatesFraction() {
+    let p = FakePlayer(); let e = PlaybackEngine(player: p)
+    e.play(.onDemand(reciterName: "R", surah: testSurah, url: URL(string:"https://e/1.mp3")!))
+    e.seek(toFraction: 0.5); #expect(p.lastSeekFraction == 0.5)
+}
+
+@MainActor @Test func finishInvokesHook() {
+    let p = FakePlayer(); let e = PlaybackEngine(player: p); var fired = false
+    e.onFinish = { fired = true }
+    e.play(.onDemand(reciterName: "R", surah: testSurah, url: URL(string:"https://e/1.mp3")!))
+    p.onFinish?(); #expect(fired)
 }

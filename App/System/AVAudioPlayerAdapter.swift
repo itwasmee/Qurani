@@ -5,12 +5,20 @@ import QuraniKit
     var onStatus: ((Bool) -> Void)?
     var onStreamTitle: ((String) -> Void)?
     var onFailure: ((String) -> Void)?
+    var onTime: ((Double, Double) -> Void)?
+    var onFinish: (() -> Void)?
     var volume: Float = 1.0 { didSet { player.volume = volume } }
 
     private let player = AVPlayer()
     private var statusObservation: NSKeyValueObservation?
     private var itemStatusObservation: NSKeyValueObservation?
     private var connectTimeout: Task<Void, Never>?
+    /// Player-scoped periodic position observer; opaque token from `addPeriodicTimeObserver`.
+    private var periodicObserver: Any?
+    /// Item-scoped end-of-playback notification token.
+    private var endObserverToken: (any NSObjectProtocol)?
+    /// Position sampling cadence for the scrubber.
+    private let timeObserverInterval = CMTime(seconds: 0.5, preferredTimescale: 600)
 
     /// If the stream hasn't begun playing within this window, treat it as a failure.
     private let connectTimeoutSeconds: UInt64 = 15
@@ -28,6 +36,9 @@ import QuraniKit
     }
 
     func replace(url: URL) {
+        // Drop the previous item's position/end observers before swapping items, so a stale
+        // periodic tick or end-notification can't outlive the item it described.
+        teardownTimeObservers()
         let item = AVPlayerItem(url: url)
         // Observe item.status for hard load failures. KVO fires on an arbitrary thread,
         // so compute the Sendable reason String here, before hopping to the main actor
@@ -47,10 +58,70 @@ import QuraniKit
         md.setDelegate(self, queue: .main)
         item.add(md)
         player.replaceCurrentItem(with: item)
+        installTimeObservers(for: item)
         armConnectTimeout()
     }
     func play() { player.play() }
     func pause() { connectTimeout?.cancel(); player.pause() }
+
+    func seek(toFraction f: Double) {
+        guard let item = player.currentItem else { return }
+        let total = item.duration.seconds
+        // Live / not-yet-ready items report indefinite (NaN) or zero duration — seeking is
+        // meaningless there, so ignore it rather than seek to NaN.
+        guard total.isFinite, total > 0 else { return }
+        let clamped = min(max(f, 0), 1)
+        player.seek(to: CMTime(seconds: total * clamped, preferredTimescale: 600))
+    }
+
+    /// Add the position sampler (player-scoped) and the end-of-item notification (scoped to
+    /// `item`). Both deliver on `.main`, so the callbacks run on the main actor.
+    private func installTimeObservers(for item: AVPlayerItem) {
+        periodicObserver = player.addPeriodicTimeObserver(forInterval: timeObserverInterval, queue: .main) { [weak self] _ in
+            // Delivered on `.main` → we're already on the main actor; assert it so the
+            // isolated state below is reachable without an async hop.
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let elapsed = self.player.currentTime().seconds
+                let duration = self.player.currentItem?.duration.seconds ?? 0
+                // Guard against the NaN/indefinite values AVPlayer reports before a finite
+                // item is ready (and for live, where duration is indefinite → report 0).
+                guard elapsed.isFinite else { return }
+                self.onTime?(elapsed, duration.isFinite ? duration : 0)
+            }
+        }
+        endObserverToken = NotificationCenter.default.addObserver(
+            forName: AVPlayerItem.didPlayToEndTimeNotification, object: item, queue: .main
+        ) { [weak self] note in
+            // The non-Sendable `Notification` must not cross the main-actor hop, so capture
+            // the ended item's identity as a Sendable `ObjectIdentifier` first (same compute-
+            // before-hop discipline as the item-status KVO above).
+            let endedItemID = (note.object as? AVPlayerItem).map(ObjectIdentifier.init)
+            MainActor.assumeIsolated {
+                // A notification enqueued just before a `replace(url:)` could still land here;
+                // only fire `onFinish` if the ended item is still the player's current item.
+                guard let self, let endedItemID,
+                      let current = self.player.currentItem,
+                      ObjectIdentifier(current) == endedItemID else { return }
+                self.onFinish?()
+            }
+        }
+    }
+
+    private func teardownTimeObservers() {
+        if let periodicObserver {
+            player.removeTimeObserver(periodicObserver)
+            self.periodicObserver = nil
+        }
+        if let endObserverToken {
+            NotificationCenter.default.removeObserver(endObserverToken)
+            self.endObserverToken = nil
+        }
+    }
+
+    // Runs on the main actor (the class is `@MainActor`) so it can reach the isolated
+    // player/observer state; balances the observers added in `installTimeObservers`.
+    isolated deinit { teardownTimeObservers() }
 
     private func armConnectTimeout() {
         connectTimeout?.cancel()

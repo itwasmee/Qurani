@@ -9,10 +9,13 @@ import QuraniKit
     var onStatus: ((Bool) -> Void)?
     var onStreamTitle: ((String) -> Void)?
     var onFailure: ((String) -> Void)?
+    var onTime: ((Double, Double) -> Void)?
+    var onFinish: (() -> Void)?
     var volume: Float = 1.0
     func replace(url: URL) {}
     func play() { onStatus?(true) }
     func pause() { onStatus?(false) }
+    func seek(toFraction f: Double) {}
 }
 
 /// Debug-only: when the app is launched with `--snapshot <outdir>`, render PNGs of the

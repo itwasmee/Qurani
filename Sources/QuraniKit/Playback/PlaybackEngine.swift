@@ -9,6 +9,10 @@ import Foundation
     @Published public private(set) var currentSourceID: String?
     @Published public var volume: Float = 1.0 { didSet { player.volume = volume } }
 
+    /// Fired when the current item plays to its end. Unused for live radio; consumed by the
+    /// Mix engine (Plan 4) to advance to the next pool entry.
+    public var onFinish: (() -> Void)?
+
     private let player: AudioPlayer
     private var surahs: [Surah] = []
     private var current: PlaybackItem?
@@ -30,6 +34,11 @@ import Foundation
             guard let self, self.currentSourceID != nil else { return }
             self.status = .failed(reason)
         }
+        self.player.onTime = { [weak self] el, du in
+            guard let self, var np = self.nowPlaying else { return }
+            np.elapsed = el; np.duration = du; self.nowPlaying = np
+        }
+        self.player.onFinish = { [weak self] in self?.onFinish?() }
     }
 
     public func attachSurahs(_ s: [Surah]) { surahs = s }
@@ -63,6 +72,10 @@ import Foundation
         default: break
         }
     }
+
+    /// Scrub the current item to `f` (0…1) of its duration. Delegates to the player; a
+    /// no-op for live items (no finite duration).
+    public func seek(toFraction f: Double) { player.seek(toFraction: f) }
 
     /// Re-attempt the current item after a failure (drives the now-playing retry tap).
     public func retry() {
