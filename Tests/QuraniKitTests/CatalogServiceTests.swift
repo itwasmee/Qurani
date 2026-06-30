@@ -39,3 +39,12 @@ import Foundation
     let rs = try CatalogService.decodeReciters(json)
     #expect(rs[0].moshafs.first?.surahNumbers == [1, 2, 3])
 }
+
+// (d) A reciter missing `name` must NOT throw the whole payload — JSONDecoder is all-or-nothing
+// on a non-optional field, so `name` is optional + nameless reciters are dropped. A healthy
+// reciter in the same payload still decodes.
+@Test func decoderToleratesMissingReciterName() throws {
+    let json = #"{"reciters":[{"id":1,"moshaf":[{"id":1,"name":"Hafs","server":"https://s/a/","surah_list":"1"}]},{"id":2,"name":"OK","moshaf":[{"id":1,"name":"Hafs","server":"https://s/b/","surah_list":"1"}]}]}"#.data(using:.utf8)!
+    let rs = try CatalogService.decodeReciters(json)
+    #expect(rs.map(\.id).contains(2))   // one bad reciter doesn't nuke the rest
+}

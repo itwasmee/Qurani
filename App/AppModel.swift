@@ -50,6 +50,7 @@ import QuraniKit
     /// from the moshaf's server base, then hands a `.onDemand` item to the engine.
     func playOnDemand(reciter: Reciter, moshaf: Moshaf, surah: Surah) {
         let url = CatalogService.audioURL(serverBase: moshaf.serverBase, surah: surah.number)
-        engine.play(.onDemand(reciterName: reciter.name, surah: surah, url: url))
+        engine.play(.onDemand(reciterID: reciter.id, reciterName: reciter.name,
+                              moshafID: moshaf.id, surah: surah, url: url))
     }
 }

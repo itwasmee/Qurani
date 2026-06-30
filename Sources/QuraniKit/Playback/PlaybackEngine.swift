@@ -5,7 +5,7 @@ import Foundation
     @Published public private(set) var nowPlaying: NowPlaying?
     /// Identity of the item currently loaded, independent of display title.
     /// Used to drive the row highlight (duplicate titles must not collide).
-    /// Format: `"live:<station.id>"` or `"ondemand:<reciterName>:<surahNumber>"`.
+    /// Format: `"live:<station.id>"` or `"ondemand:<reciterID>:<moshafID>:<surahNumber>"`.
     @Published public private(set) var currentSourceID: String?
     @Published public var volume: Float = 1.0 { didSet { player.volume = volume } }
 
@@ -55,7 +55,7 @@ import Foundation
             nowPlaying = NowPlaying(title: station.name,
                                     subtitle: station.reciter ?? station.region,
                                     isLive: true, surahHint: nil)
-        case .onDemand(let reciterName, let surah, _):
+        case .onDemand(_, let reciterName, _, let surah, _):
             nowPlaying = NowPlaying(title: surah.nameAr,
                                     subtitle: reciterName,
                                     isLive: false, surahHint: nil)
@@ -69,11 +69,27 @@ import Foundation
     public func playStation(_ s: Station) { play(.liveStation(s)) }
 
     public func toggle() {
+        // NEW-3: an on-demand item that already played to its end leaves the player parked at
+        // its tail (real players don't auto-rewind). A tap on play/pause should then restart it
+        // from the top, not flip pause state. Detect "at end" from the last position tick
+        // (elapsed ≈ duration, with a real finite duration — never true for live).
+        if current != nil, isAtEnd {
+            player.seek(toFraction: 0)
+            player.play()
+            return
+        }
         switch status {
         case .playing: player.pause()
         case .paused, .idle: if current != nil { player.play() }
         default: break
         }
+    }
+
+    /// Whether the current on-demand item is parked within ~0.5 s of its end, per the last
+    /// `onTime` tick recorded in `nowPlaying`. Always false for live (duration stays 0).
+    private var isAtEnd: Bool {
+        guard let np = nowPlaying, !np.isLive, np.duration > 0 else { return false }
+        return np.elapsed >= np.duration - 0.5
     }
 
     /// Scrub the current item to `f` (0…1) of its duration. Delegates to the player; a

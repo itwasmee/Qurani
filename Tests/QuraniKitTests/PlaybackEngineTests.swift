@@ -108,12 +108,12 @@ let testSurah = Surah(number: 67, nameAr: "الْمُلْك", translit: "Al-Mulk
     let p = FakePlayer(); let e = PlaybackEngine(player: p)
     let s = Surah(number: 67, nameAr: "الْمُلْك", translit: "Al-Mulk", nameEn: "", ayahCount: 30, makki: true, juz: 29)
     let url = URL(string: "https://server.example/067.mp3")!
-    e.play(.onDemand(reciterName: "Sudais", surah: s, url: url))
+    e.play(.onDemand(reciterID: 9, reciterName: "Sudais", moshafID: 3, surah: s, url: url))
     #expect(p.lastURL == url)
     #expect(e.nowPlaying?.title == "الْمُلْك")
     #expect(e.nowPlaying?.subtitle == "Sudais")
     #expect(e.nowPlaying?.isLive == false)
-    #expect(e.currentSourceID == "ondemand:Sudais:67")
+    #expect(e.currentSourceID == "ondemand:9:3:67")
 }
 
 @MainActor @Test func stationStillPlaysViaConvenience() {
@@ -126,7 +126,7 @@ let testSurah = Surah(number: 67, nameAr: "الْمُلْك", translit: "Al-Mulk
 
 @MainActor @Test func timeUpdatesPopulateNowPlaying() {
     let p = FakePlayer(); let e = PlaybackEngine(player: p)
-    e.play(.onDemand(reciterName: "R", surah: testSurah, url: URL(string:"https://e/1.mp3")!))
+    e.play(.onDemand(reciterID: 1, reciterName: "R", moshafID: 1, surah: testSurah, url: URL(string:"https://e/1.mp3")!))
     p.onTime?(12, 60)
     #expect(e.nowPlaying?.elapsed == 12); #expect(e.nowPlaying?.duration == 60)
 }
@@ -142,13 +142,31 @@ let testSurah = Surah(number: 67, nameAr: "الْمُلْك", translit: "Al-Mulk
 
 @MainActor @Test func seekDelegatesFraction() {
     let p = FakePlayer(); let e = PlaybackEngine(player: p)
-    e.play(.onDemand(reciterName: "R", surah: testSurah, url: URL(string:"https://e/1.mp3")!))
+    e.play(.onDemand(reciterID: 1, reciterName: "R", moshafID: 1, surah: testSurah, url: URL(string:"https://e/1.mp3")!))
     e.seek(toFraction: 0.5); #expect(p.lastSeekFraction == 0.5)
 }
 
 @MainActor @Test func finishInvokesHook() {
     let p = FakePlayer(); let e = PlaybackEngine(player: p); var fired = false
     e.onFinish = { fired = true }
-    e.play(.onDemand(reciterName: "R", surah: testSurah, url: URL(string:"https://e/1.mp3")!))
+    e.play(.onDemand(reciterID: 1, reciterName: "R", moshafID: 1, surah: testSurah, url: URL(string:"https://e/1.mp3")!))
     p.onFinish?(); #expect(fired)
+}
+
+// The on-demand source id carries reciter + moshaf ids (not the display name), so identity is
+// stable across duplicate names and distinct per riwaya.
+@MainActor @Test func onDemandSourceIDCarriesMoshaf() {
+    let p = FakePlayer(); let e = PlaybackEngine(player: p)
+    e.play(.onDemand(reciterID: 9, reciterName: "Sudais", moshafID: 3, surah: testSurah, url: URL(string:"https://e/067.mp3")!))
+    #expect(e.currentSourceID == "ondemand:9:3:67")
+}
+
+// NEW-3: toggling an on-demand item that already reached its end restarts it from 0 (seeks to
+// fraction 0 before play), rather than flipping to pause.
+@MainActor @Test func playAtEndSeeksToZero() {
+    let p = FakePlayer(); let e = PlaybackEngine(player: p)
+    e.play(.onDemand(reciterID: 1, reciterName: "R", moshafID: 1, surah: testSurah, url: URL(string:"https://e/1.mp3")!))
+    p.onTime?(60, 60)              // at end
+    e.toggle()                      // resume from paused-at-end
+    #expect(p.lastSeekFraction == 0)   // sought to start before play
 }

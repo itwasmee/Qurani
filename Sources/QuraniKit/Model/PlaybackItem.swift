@@ -5,21 +5,25 @@ import Foundation
 /// row highlights (so duplicate display titles never collide).
 public enum PlaybackItem: Sendable, Equatable {
     case liveStation(Station)
-    case onDemand(reciterName: String, surah: Surah, url: URL)
+    case onDemand(reciterID: Int, reciterName: String, moshafID: Int, surah: Surah, url: URL)
 
     public var isLive: Bool { if case .liveStation = self { return true }; return false }
 
     public var url: URL {
         switch self {
         case .liveStation(let s): return s.url
-        case .onDemand(_, _, let u): return u
+        case .onDemand(_, _, _, _, let u): return u
         }
     }
 
+    /// Identity is keyed on `reciterID`/`moshafID` (not the display name): two reciters can
+    /// share a name, and one reciter's riwayat differ per moshaf — ids keep highlights and the
+    /// Mix engine from colliding.
     public var sourceID: String {
         switch self {
         case .liveStation(let s): return "live:\(s.id)"
-        case .onDemand(let r, let s, _): return "ondemand:\(r):\(s.number)"
+        case .onDemand(let reciterID, _, let moshafID, let surah, _):
+            return "ondemand:\(reciterID):\(moshafID):\(surah.number)"
         }
     }
 }

@@ -132,7 +132,8 @@ import QuraniKit
         let engine = PlaybackEngine(player: SnapshotPlayer()); engine.attachSurahs(surahs)
         if let s55 = surahs.first(where: { $0.number == 55 }) {
             let url = CatalogService.audioURL(serverBase: reciter.moshafs[0].serverBase, surah: 55)
-            engine.play(.onDemand(reciterName: reciter.name, surah: s55, url: url))
+            engine.play(.onDemand(reciterID: reciter.id, reciterName: reciter.name,
+                                  moshafID: reciter.moshafs[0].id, surah: s55, url: url))
         }
         let detail = ReciterDetailView(
             reciter: reciter, favorites: favs, pool: pool, engine: engine,
@@ -152,7 +153,8 @@ import QuraniKit
         for (raw, theme) in [("noor", ResolvedTheme.noor), ("sahar", .sahar)] {
             let player = SnapshotPlayer()
             let engine = PlaybackEngine(player: player)
-            engine.play(.onDemand(reciterName: "Mishary Alafasy", surah: surah, url: url))
+            engine.play(.onDemand(reciterID: 1, reciterName: "Mishary Alafasy",
+                                  moshafID: 1, surah: surah, url: url))
             player.onTime?(92, 760)    // feed position through the engine → elapsed 1:32 of 12:40
             let bar = NowPlayingBar(engine: engine, tokens: Tokens.of(theme))
                 .frame(width: 344).background(Tokens.of(theme).bg)

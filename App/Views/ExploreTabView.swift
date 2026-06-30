@@ -115,8 +115,9 @@ struct ExploreTabView: View {
     }
 
     /// Highlight the catalog row whose surah is currently streaming (matches the mockup's
-    /// active first row). Keyed on the on-demand source id's reciter-name prefix.
+    /// active first row). Keyed on the on-demand source id's reciter-id prefix, so it lights up
+    /// for any moshaf/surah of that reciter.
     private func isPlayingReciter(_ r: Reciter) -> Bool {
-        (engine.currentSourceID?.hasPrefix("ondemand:\(r.name):") ?? false) && engine.status == .playing
+        (engine.currentSourceID?.hasPrefix("ondemand:\(r.id):") ?? false) && engine.status == .playing
     }
 }

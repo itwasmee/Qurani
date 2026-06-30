@@ -27,11 +27,19 @@ import QuraniKit
     /// observe the pre-change value (nil on first play, stale on stop).
     func update(_ np: NowPlaying?) {
         guard let np else { MPNowPlayingInfoCenter.default().nowPlayingInfo = nil; return }
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = [
+        var info: [String: Any] = [
             MPMediaItemPropertyTitle: np.surahHint ?? np.title,
             MPMediaItemPropertyArtist: np.subtitle,
             MPNowPlayingInfoPropertyIsLiveStream: np.isLive
         ]
+        // NEW-1: on-demand items have a finite position, so publish duration + elapsed for the
+        // lock screen / Control Center progress bar. Live streams have no finite length — leave
+        // these unset so the system renders them as position-less.
+        if !np.isLive {
+            info[MPMediaItemPropertyPlaybackDuration] = np.duration
+            info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = np.elapsed
+        }
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
 
     /// Mirror the engine status into Control Center's transport state so play/pause

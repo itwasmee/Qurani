@@ -17,6 +17,11 @@ struct ReciterDetailView: View {
     let onBack: () -> Void
     let play: (Reciter, Moshaf, Surah) -> Void
 
+    /// number → Surah, built once from `surahs` (NEW-2). `body` re-renders ~2×/s while an
+    /// on-demand item ticks; rebuilding this 114-entry dictionary inside `body`/`listedSurahs`
+    /// each time was pure churn. `surahs` is fixed for the view's lifetime, so memoize it here.
+    private let surahsByNumber: [Int: Surah]
+
     @State private var activeMoshaf: Moshaf?
 
     init(reciter: Reciter, favorites: FavoritesStore, pool: MixPoolStore,
@@ -27,6 +32,7 @@ struct ReciterDetailView: View {
         _pool = ObservedObject(wrappedValue: pool)
         _engine = ObservedObject(wrappedValue: engine)
         self.surahs = surahs
+        self.surahsByNumber = Dictionary(surahs.map { ($0.number, $0) }, uniquingKeysWith: { a, _ in a })
         self.tokens = tokens
         self.onBack = onBack
         self.play = play
@@ -38,15 +44,17 @@ struct ReciterDetailView: View {
     private var inPool: Bool { pool.contains(reciter.id) }
 
     /// The active moshaf's surahs, mapped from its `surahNumbers` onto the loaded `Surah`
-    /// records. Numbers with no match (sparse feeds) are skipped, never crash.
+    /// records via the memoized `surahsByNumber`. Numbers with no match (sparse feeds) are
+    /// skipped, never crash.
     private var listedSurahs: [Surah] {
         guard let moshaf else { return [] }
-        let byNumber = Dictionary(surahs.map { ($0.number, $0) }, uniquingKeysWith: { a, _ in a })
-        return moshaf.surahNumbers.compactMap { byNumber[$0] }
+        return moshaf.surahNumbers.compactMap { surahsByNumber[$0] }
     }
 
     private func isPlaying(_ surah: Surah) -> Bool {
-        engine.currentSourceID == "ondemand:\(reciter.name):\(surah.number)" && engine.status == .playing
+        guard let moshaf else { return false }
+        return engine.currentSourceID == "ondemand:\(reciter.id):\(moshaf.id):\(surah.number)"
+            && engine.status == .playing
     }
 
     var body: some View {
