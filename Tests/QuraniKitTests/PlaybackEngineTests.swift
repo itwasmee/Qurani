@@ -77,6 +77,16 @@ import Foundation
     #expect(engine.status == .failed("boom"))
 }
 
+@MainActor @Test func lateFailureWhenIdleIsIgnored() {
+    let p = FakePlayer(); let engine = PlaybackEngine(player: p)
+    engine.play(Station(id: "x", name: "Egypt", region: "Cairo", kind: .icecast,
+                        url: URL(string: "https://e.com/dead")!, reciter: nil, hasVideo: false))
+    engine.stop()
+    p.onFailure?("boom")                 // late failure after stop()/idle must be a no-op
+    #expect(engine.status == .idle)      // NOT .failed("boom")
+    #expect(engine.nowPlaying == nil)
+}
+
 @MainActor @Test func streamTitleUpdatesSurahHint() {
     let p = FakePlayer(); let engine = PlaybackEngine(player: p)
     engine.attachSurahs([Surah(number: 67, nameAr: "الْمُلْك", translit: "Al-Mulk", nameEn: "", ayahCount: 30, makki: true, juz: 29)])

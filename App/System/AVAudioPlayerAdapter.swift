@@ -32,10 +32,16 @@ import QuraniKit
         // Observe item.status for hard load failures. KVO fires on an arbitrary thread,
         // so compute the Sendable reason String here, before hopping to the main actor
         // (same race-safe shape as the timeControlStatus observation above).
-        itemStatusObservation = item.observe(\.status, options: [.new]) { [weak self] item, _ in
-            guard item.status == .failed else { return }
-            let reason = item.error?.localizedDescription ?? "Stream unavailable"
-            Task { @MainActor in self?.fail(reason) }
+        itemStatusObservation = item.observe(\.status, options: [.new]) { [weak self] observedItem, _ in
+            guard observedItem.status == .failed else { return }
+            let reason = observedItem.error?.localizedDescription ?? "Stream unavailable"
+            // A `.failed` callback for item A can land AFTER the user switched to station B
+            // (which reassigned this observation). Re-validate identity on the main hop and
+            // only fail if the failed item is still the player's current item.
+            Task { @MainActor in
+                guard let self, self.player.currentItem === observedItem else { return }
+                self.fail(reason)
+            }
         }
         let md = AVPlayerItemMetadataOutput(identifiers: nil)
         md.setDelegate(self, queue: .main)

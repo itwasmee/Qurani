@@ -23,7 +23,11 @@ import Foundation
             self.nowPlaying = np
         }
         self.player.onFailure = { [weak self] reason in
-            self?.status = .failed(reason)
+            // Ignore a late failure that arrives when nothing is loaded (e.g. after
+            // `stop()`/idle): without a current station it would strand the UI in
+            // `.failed` with `nowPlaying == nil`.
+            guard let self, self.currentStationID != nil else { return }
+            self.status = .failed(reason)
         }
     }
 

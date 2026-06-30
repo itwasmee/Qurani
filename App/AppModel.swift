@@ -5,7 +5,6 @@ import QuraniKit
 @MainActor final class AppModel: ObservableObject {
     let engine: PlaybackEngine
     let sources: SourcesStore
-    @AppStorage("theme") var themeRaw: String = Theme.system.rawValue
     @Published var surahs: [Surah] = []
 
     // App-lifetime singletons: created exactly once in `init` (see C1). `bootstrap()`
@@ -14,8 +13,6 @@ import QuraniKit
     private let bridge: NowPlayingBridge
     private var cancellables: Set<AnyCancellable> = []
     private var didLoad = false
-
-    var theme: Theme { Theme(rawValue: themeRaw) ?? .system }
 
     init() {
         let engine = PlaybackEngine(player: AVAudioPlayerAdapter())
