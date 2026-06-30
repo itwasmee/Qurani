@@ -1,1 +1,6 @@
-[]
+[
+  {"id":"makkah_haram","name":"Makkah — Al-Haram","region":"Makkah","kind":"hls","url":"https://cdn-globecast.akamaized.net/live/eds/saudi_quran/hls_roku/index.m3u8","reciter":null,"hasVideo":true},
+  {"id":"madinah_nabawi","name":"Madinah — An-Nabawi","region":"Madinah","kind":"hls","url":"https://cdn-globecast.akamaized.net/live/eds/saudi_sunnah/hls_roku/index.m3u8","reciter":null,"hasVideo":true},
+  {"id":"egypt_quran_kareem","name":"Quran Al-Kareem","region":"Cairo, Egypt","kind":"icecast","url":"https://stream.radiojar.com/8s5u5tpdtwzuv","reciter":null,"hasVideo":false},
+  {"id":"saudi_quran_radio","name":"Saudi Quran Radio","region":"KSA","kind":"hls","url":"https://live.kwikmotion.com/sbrksaquranradiolive/srpksaquranradio/playlist.m3u8","reciter":null,"hasVideo":false}
+]
