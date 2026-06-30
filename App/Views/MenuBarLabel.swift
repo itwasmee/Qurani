@@ -8,7 +8,15 @@ struct MenuBarLabel: View {
     let isPlaying: Bool
     var tint: Color? = nil
     @State private var phase = false
-    private let idle: [CGFloat] = [0.45, 0.8, 0.6, 0.35]
+
+    // The bars oscillate between a "low" and "high" endpoint set forever (easeInOut
+    // .repeatForever autoreverses), so they're never perfectly still while the panel is
+    // open. Idle is a gentle low-amplitude wave; playing is a taller, faster bounce.
+    // Adjacent bars are anti-phase, giving the row a lively wave rather than a uniform pulse.
+    private let idleLow:  [CGFloat] = [0.35, 0.50, 0.40, 0.52]
+    private let idleHigh: [CGFloat] = [0.52, 0.38, 0.54, 0.40]
+    private let playLow:  [CGFloat] = [0.30, 1.00, 0.40, 0.85]
+    private let playHigh: [CGFloat] = [1.00, 0.40, 0.90, 0.50]
 
     var body: some View {
         HStack(spacing: 1.6) {
@@ -18,15 +26,18 @@ struct MenuBarLabel: View {
         }
         .frame(height: 15)
         .foregroundStyle(tint ?? Color.primary)
-        .onAppear { if isPlaying { phase = true } }
-        .onChange(of: isPlaying) { _, now in phase = now }   // react to play/pause after first appear
-        .animation(isPlaying ? .easeInOut(duration: 0.5).repeatForever() : .default, value: phase)
+        // Kick off the perpetual wave as soon as the bars appear, and re-key it on
+        // play/pause so the new cadence + amplitude take effect (a repeatForever animation
+        // only re-commits when its `value` changes).
+        .onAppear { phase = true }
+        .onChange(of: isPlaying) { _, _ in phase.toggle() }
+        .animation(.easeInOut(duration: isPlaying ? 0.42 : 0.9).repeatForever(), value: phase)
     }
 
     private func barHeight(_ i: Int) -> CGFloat {
-        guard isPlaying else { return idle[i] }
-        let base: [CGFloat] = phase ? [1.0, 0.4, 0.9, 0.5] : [0.3, 1.0, 0.4, 0.85]
-        return base[i]
+        let low  = isPlaying ? playLow  : idleLow
+        let high = isPlaying ? playHigh : idleHigh
+        return phase ? high[i] : low[i]
     }
 }
 
@@ -42,6 +53,8 @@ struct EqualizerMenuBarLabel: View {
     private var isPlaying: Bool { engine.status == .playing }
     var body: some View {
         Image(systemName: "waveform")
-            .symbolEffect(.variableColor.iterative.dimInactiveLayers, isActive: isPlaying)
+            // No `.dimInactiveLayers` — it makes the wave too subtle in the menubar. Plain
+            // `.variableColor.iterative` cycles the layers clearly while `engine.status == .playing`.
+            .symbolEffect(.variableColor.iterative, isActive: isPlaying)
     }
 }
