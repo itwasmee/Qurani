@@ -18,7 +18,15 @@ import Foundation
     """.data(using: .utf8)!
     let stations = try RadiosService.decode(json)
     #expect(stations.count == 2)
+    // Row 0: rewritten host + all synthesized fields.
+    #expect(stations[0].id == "radio_1")
     #expect(stations[0].url.host == "qurango.net")
     #expect(stations[0].kind == .icecast)
+    #expect(stations[0].region == "24/7")
+    #expect(stations[0].hasVideo == false)
     #expect(stations[0].reciter == "سعد الغامدي")
+    // Row 1: already-canonical host preserved untouched; second row not dropped.
+    #expect(stations[1].id == "radio_2")
+    #expect(stations[1].url.absoluteString == "https://qurango.net/radio/mishari")
+    #expect(stations[1].reciter == "مشاري العفاسي")
 }
