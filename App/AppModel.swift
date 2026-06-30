@@ -83,4 +83,130 @@ import QuraniKit
         library.add(tracks)
         importer.clearPending(ids: Set(reviewed.map(\.pendingID)))
     }
+
+    // MARK: - Mix session
+    //
+    // The Mix is a random per-surah "station": each surah in the configured range is played
+    // by one randomly-chosen pool member that actually contributes it. The pure assignment
+    // lives in `MixEngine.buildQueue`; this orchestration owns the live session — building the
+    // pool from the catalog/library, walking the queue as items finish, and re-rolling/stopping.
+
+    /// True while a Mix session is active (drives the Mix tab's play/stop affordance).
+    @Published var isMixing = false
+    /// The resolved per-surah playback order for the current session; empty when not mixing.
+    @Published private(set) var mixQueue: [MixQueueItem] = []
+    /// Index into `mixQueue` of the item currently playing.
+    private var mixIndex = 0
+    /// Config + pool the session was started with, retained so `rerollMix()` can rebuild.
+    private var mixConfig = MixConfig()
+    private var mixPool: [PoolMember] = []
+
+    /// Surah + member display-name of the item that plays after the current one, or nil at the
+    /// tail of the queue. Powers the "up next" hint in the Mix UI; member resolved via the pool.
+    var mixUpNext: (surah: Int, memberName: String)? {
+        let next = mixIndex + 1
+        guard mixQueue.indices.contains(next) else { return nil }
+        let item = mixQueue[next]
+        let name = mixPool.first { $0.id == item.memberID }?.displayName ?? item.memberID
+        return (surah: item.surah, memberName: name)
+    }
+
+    /// Assemble the mix pool from the user's selections: one on-demand member per catalog reciter
+    /// in `onDemandIDs` (using its first/primary moshaf), plus one local member per library reciter
+    /// name in `localNames`. A member's `surahNumbers` is the set it can actually supply, which
+    /// `MixEngine` consults to skip surahs no member covers.
+    func buildPool(onDemandIDs: Set<Int>, localNames: Set<String>) -> [PoolMember] {
+        var members: [PoolMember] = []
+        for r in catalog.reciters where onDemandIDs.contains(r.id) {
+            guard let m = r.moshafs.first else { continue }
+            members.append(PoolMember(id: "od:\(r.id):\(m.id)", source: .onDemand,
+                                      displayName: r.name, reciterName: r.name,
+                                      surahNumbers: Set(m.surahNumbers),
+                                      reciterID: r.id, moshaf: m))
+        }
+        for group in library.grouped() where localNames.contains(group.reciter) {
+            members.append(PoolMember(id: "local:\(group.reciter)", source: .local,
+                                      displayName: group.reciter, reciterName: group.reciter,
+                                      surahNumbers: Set(group.tracks.map(\.surahNumber)),
+                                      reciterID: nil, moshaf: nil))
+        }
+        return members
+    }
+
+    /// Begin a Mix session with the given config over the given pool. Builds the queue, wires the
+    /// engine's finish callback to advance through it, and starts at the top. A pool that covers no
+    /// surah in range yields an empty queue and a no-op (isMixing stays false).
+    func startMix(config: MixConfig, pool: [PoolMember]) {
+        mixConfig = config
+        mixPool = pool
+        rebuildQueue()
+        mixIndex = 0
+        guard !mixQueue.isEmpty else { isMixing = false; return }
+        isMixing = true
+        engine.onFinish = { [weak self] in self?.advanceMix() }
+        playMixIndex(0)
+    }
+
+    /// Load and play the queue item at `i`, resolving its pool member to a `PlaybackItem`:
+    /// on-demand members stream their moshaf's per-surah URL; local members resolve the matching
+    /// `LocalTrack`'s bookmark. A local track that no longer resolves (moved/deleted) is skipped to
+    /// the next item rather than stalling the session.
+    private func playMixIndex(_ i: Int) {
+        guard mixQueue.indices.contains(i) else { return }
+        let item = mixQueue[i]
+        guard let member = mixPool.first(where: { $0.id == item.memberID }) else { return }
+        mixIndex = i
+        switch member.source {
+        case .onDemand:
+            guard let surah = surahs.first(where: { $0.number == item.surah }) else { return }
+            // moshaf/reciterID are non-nil for every on-demand member `buildPool` emits.
+            let url = CatalogService.audioURL(serverBase: member.moshaf!.serverBase, surah: item.surah)
+            engine.play(.onDemand(reciterID: member.reciterID!, reciterName: member.reciterName,
+                                  moshafID: member.moshaf!.id, surah: surah, url: url))
+        case .local:
+            guard let track = library.tracks.first(where: {
+                      $0.reciterName == member.reciterName && $0.surahNumber == item.surah
+                  }),
+                  let url = library.resolveURL(track)
+            else { advanceMix(); return }
+            engine.play(.localTrack(track: track, url: url))
+        }
+    }
+
+    /// Advance to the next queue item when the current one finishes; stop the session at the tail.
+    /// Invoked by `engine.onFinish` and (later) the Mix UI's skip control.
+    func advanceMix() {
+        let next = mixIndex + 1
+        if mixQueue.indices.contains(next) {
+            playMixIndex(next)
+        } else {
+            stopMix()
+        }
+    }
+
+    /// Re-roll the session: rebuild the queue from the same pool + config with a fresh random
+    /// assignment and ordering, then restart from the top of the new queue.
+    func rerollMix() {
+        rebuildQueue()
+        mixIndex = 0
+        playMixIndex(0)
+    }
+
+    /// Tear down the session: clear the finish callback (so a final natural finish can't re-enter),
+    /// stop the engine, and empty the queue.
+    func stopMix() {
+        isMixing = false
+        engine.onFinish = nil
+        engine.stop()
+        mixQueue = []
+    }
+
+    /// Rebuild `mixQueue` from the retained `mixPool` + `mixConfig` using system-RNG randomness.
+    /// The surah→juz map (consulted only for `.juz` ranges) is derived from the loaded `surahs`.
+    private func rebuildQueue() {
+        let surahJuz = Dictionary(surahs.map { ($0.number, $0.juz) }, uniquingKeysWith: { first, _ in first })
+        mixQueue = MixEngine.buildQueue(pool: mixPool, config: mixConfig, surahJuz: surahJuz,
+                                        pickIndex: { Int.random(in: 0..<$0) },
+                                        shuffle: { $0.shuffled() })
+    }
 }
