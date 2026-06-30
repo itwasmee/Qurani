@@ -10,6 +10,9 @@ struct NowPlayingBar: View {
     @State private var dragFraction: Double?
 
     private var isFailed: Bool { if case .failed = engine.status { return true } else { return false } }
+    /// A library-imported local file is loaded — drives the gold 📚 LIBRARY source chip (mirrors how
+    /// live shows the red LIVE pill; on-demand has no chip). Keyed on the source-id prefix.
+    private var isLocal: Bool { engine.currentSourceID?.hasPrefix("local:") ?? false }
 
     var body: some View {
         if isFailed, let np = engine.nowPlaying {
@@ -66,6 +69,10 @@ struct NowPlayingBar: View {
                             Text("LIVE").font(.system(size: 8, weight: .heavy)).foregroundStyle(.white)
                                 .padding(.horizontal, 5).padding(.vertical, 2)
                                 .background(.red, in: RoundedRectangle(cornerRadius: 5))
+                        } else if isLocal {
+                            Text("📚 LIBRARY").font(.system(size: 8, weight: .heavy)).foregroundStyle(tokens.gold)
+                                .padding(.horizontal, 5).padding(.vertical, 2)
+                                .background(tokens.gold.opacity(0.16), in: RoundedRectangle(cornerRadius: 5))
                         }
                         Text(np.subtitle).font(.system(size: 10)).foregroundStyle(tokens.muted).lineLimit(1)
                     }

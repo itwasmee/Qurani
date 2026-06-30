@@ -61,6 +61,14 @@ import QuraniKit
                               moshafID: moshaf.id, surah: surah, url: url))
     }
 
+    /// Play a library-imported local file. Resolving the track's security-scoped bookmark begins
+    /// access (held for the session — released when the process exits); a track whose file has since
+    /// moved or been deleted resolves to `nil` and is a no-op rather than a crash.
+    func playLocal(_ track: LocalTrack) {
+        guard let url = library.resolveURL(track) else { return }
+        engine.play(.localTrack(track: track, url: url))
+    }
+
     /// Commit the review sheet's confirmed imports to the library, then drop them from the pending
     /// list. Each `ReviewedImport` pairs with its `PendingImport` by id to recover the security-scoped
     /// bookmark, confidence, and duration captured at import time.

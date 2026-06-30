@@ -9,8 +9,11 @@ struct GlassPanel: View {
     @ObservedObject var catalog: CatalogStore
     @ObservedObject var favorites: FavoritesStore
     @ObservedObject var pool: MixPoolStore
+    @ObservedObject var library: LibraryStore
+    @ObservedObject var importer: LibraryImporter
     let surahs: [Surah]
     let play: (Reciter, Moshaf, Surah) -> Void
+    let playLocal: (LocalTrack) -> Void
     @Environment(\.colorScheme) private var scheme
     // Read the persisted theme directly here: @AppStorage is a reactive DynamicProperty,
     // so changing it from the gear menu re-renders the panel LIVE. (An @AppStorage on
@@ -49,6 +52,9 @@ struct GlassPanel: View {
                 case 1:
                     ExploreTabView(catalog: catalog, favorites: favorites, pool: pool,
                                    engine: engine, surahs: surahs, tokens: tokens, play: play)
+                case 2:
+                    LibraryTabView(library: library, importer: importer, engine: engine,
+                                   surahs: surahs, tokens: tokens, playLocal: playLocal)
                 default:
                     VStack(spacing: 6) {
                         Image(systemName: "sparkles").font(.system(size: 22)).foregroundStyle(tokens.muted)

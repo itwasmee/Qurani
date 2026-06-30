@@ -16,8 +16,10 @@ struct QuraniApp: App {
         MenuBarExtra {
             GlassPanel(sources: model.sources, engine: model.engine,
                        catalog: model.catalog, favorites: model.favorites, pool: model.pool,
+                       library: model.library, importer: model.importer,
                        surahs: model.surahs,
-                       play: { model.playOnDemand(reciter: $0, moshaf: $1, surah: $2) })
+                       play: { model.playOnDemand(reciter: $0, moshaf: $1, surah: $2) },
+                       playLocal: { model.playLocal($0) })
                 .task { await model.bootstrap() }
         } label: {
             EqualizerMenuBarLabel(engine: model.engine)

@@ -175,10 +175,13 @@ struct ReviewedImport: Sendable, Equatable {
             let guess = Tagger.guess(filename: url.deletingPathExtension().lastPathComponent,
                                      folder: url.deletingLastPathComponent().lastPathComponent,
                                      tags: tags, surahs: surahs)
-            // Two write events for the same file can race two ingests here; de-dup by path before
-            // appending (the check + append run with no `await` between them, so it's atomic).
+            // De-dup by path against BOTH in-flight pending imports and already-committed library
+            // tracks — so re-adding an imported file via Add-files / drag-drop can't create a
+            // duplicate (mirrors `scanLibraryFolder`'s guard). Two write events for the same file can
+            // also race two ingests here; the check + append run with no `await` between them, so it
+            // stays atomic on the main actor.
             let path = url.standardizedFileURL.path
-            guard !pendingImports.contains(where: { $0.url.standardizedFileURL.path == path }) else { return }
+            guard !libraryPaths().union(pendingPaths()).contains(path) else { return }
             pendingImports.append(PendingImport(url: url, bookmark: bookmark, guess: guess, durationMs: durationMs))
         }
     }
@@ -257,14 +260,31 @@ struct ReviewedImport: Sendable, Equatable {
         return (url, isStale)
     }
 
-    /// The default watched folder (`~/Music/Qurani`), created if missing so the panel can open there.
-    nonisolated static func defaultLibraryFolder() -> URL {
+    /// The default watched-folder URL (`~/Music/Qurani`) *without* creating it — for display (the
+    /// Library tab's folder bar) and as the base for `defaultLibraryFolder()`.
+    nonisolated static func defaultLibraryFolderURL() -> URL {
         let music = (try? FileManager.default.url(for: .musicDirectory, in: .userDomainMask,
                                                   appropriateFor: nil, create: false))
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Music", isDirectory: true)
-        let folder = music.appendingPathComponent("Qurani", isDirectory: true)
+        return music.appendingPathComponent("Qurani", isDirectory: true)
+    }
+
+    /// The default watched folder (`~/Music/Qurani`), created if missing so the panel can open there.
+    nonisolated static func defaultLibraryFolder() -> URL {
+        let folder = defaultLibraryFolderURL()
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         return folder
+    }
+
+    /// The folder shown in the Library tab's bar: the user's granted watched folder if one has been
+    /// chosen, else the default `~/Music/Qurani`. Display / Reveal only — resolving the bookmark here
+    /// does NOT begin security-scoped access or create the directory.
+    var libraryFolderURL: URL {
+        if let data = defaults.data(forKey: Self.libraryFolderBookmarkKey),
+           let (url, _) = Self.resolveScopedBookmark(data) {
+            return url
+        }
+        return Self.defaultLibraryFolderURL()
     }
 
     private static func isAudioFile(_ url: URL) -> Bool {

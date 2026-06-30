@@ -58,10 +58,13 @@ import QuraniKit
             let engine = PlaybackEngine(player: SnapshotPlayer())
             if let first = featured.first { engine.playStation(first) }   // one station playing
             let tmp = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            let library = LibraryStore(directory: tmp)
             let panel = GlassPanel(sources: sources, engine: engine,
                                    catalog: CatalogStore(), favorites: FavoritesStore(directory: tmp),
-                                   pool: MixPoolStore(directory: tmp), surahs: [],
-                                   play: { _, _, _ in })   // Live tab is shown; Explore data unused here
+                                   pool: MixPoolStore(directory: tmp),
+                                   library: library, importer: LibraryImporter(library: library),
+                                   surahs: [],
+                                   play: { _, _, _ in }, playLocal: { _ in })   // Live tab shown; others unused here
                 .environment(\.colorScheme, isDark ? .dark : .light)  // fallback if @AppStorage is unset
                 .background(Tokens.of(resolved).bg)                   // opaque backing for the vibrancy gap
             let path = "\(outDir)/panel-\(raw).png"
@@ -77,6 +80,9 @@ import QuraniKit
 
         // Explore tab (Noor): the reciter catalog + a reciter opened, one surah streaming.
         renderExplore(outDir: outDir, written: &written)
+
+        // Library tab (Noor): three reciters grouped, a few surahs each, one local file playing.
+        renderLibrary(outDir: outDir, written: &written)
 
         // Now-playing bar mid-on-demand (scrubber + mm:ss labels), both themes.
         renderNowPlaying(outDir: outDir, written: &written)
@@ -141,6 +147,40 @@ import QuraniKit
             .frame(width: 344).background(noor.bg)
         let detailPath = "\(outDir)/reciter-detail.png"
         if writePNG(detail, to: detailPath) { written.append(detailPath) }
+    }
+
+    /// Renders the Library tab in Noor: three reciters grouped (Style-B surah rows with durations),
+    /// the first group's first surah playing (highlighted) via a `SnapshotPlayer`. Synthetic `Data()`
+    /// bookmarks never resolve, but the snapshot only displays + matches the source id — it never
+    /// plays real audio. Durations mirror the mockup (18:02 / 38:12 / 12:40).
+    private static func renderLibrary(outDir: String, written: inout [String]) {
+        let noor = Tokens.of(.noor)
+        let surahs = (try? QuranData.loadSurahs()) ?? []
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let library = LibraryStore(directory: tmp)
+        func track(_ reciter: String, _ surah: Int, _ durationMs: Int) -> LocalTrack {
+            LocalTrack(bookmark: Data(), reciterName: reciter, surahNumber: surah,
+                       confidence: 1.0, durationMs: durationMs)
+        }
+        library.add([
+            track("Abdul Basit Abdul Samad", 1, 96_000),     // Al-Fatiha · 1:36 (playing)
+            track("Abdul Basit Abdul Samad", 36, 540_000),   // Ya-Sin · 9:00
+            track("Mahmoud Al-Husary", 2, 1_082_000),        // Al-Baqarah · 18:02
+            track("Mahmoud Al-Husary", 18, 2_292_000),       // Al-Kahf · 38:12
+            track("Mahmoud Al-Husary", 55, 760_000),         // Ar-Rahman · 12:40
+            track("Abdul Rahman Al-Sudais", 112, 41_000),    // Al-Ikhlas · 0:41
+        ])
+        let importer = LibraryImporter(library: library); importer.surahs = surahs
+        let engine = PlaybackEngine(player: SnapshotPlayer()); engine.attachSurahs(surahs)
+        // Play the alphabetically-first group's first surah so the highlighted row sits at the top.
+        if let playing = library.grouped().first?.tracks.first {
+            engine.play(.localTrack(track: playing, url: URL(fileURLWithPath: "/dev/null")))
+        }
+        let view = LibraryTabView(library: library, importer: importer, engine: engine,
+                                  surahs: surahs, tokens: noor, playLocal: { _ in })
+            .frame(width: 344).background(noor.bg)
+        let path = "\(outDir)/library.png"
+        if writePNG(view, to: path) { written.append(path) }
     }
 
     /// Renders the now-playing bar mid-on-demand in both Noor and Sahar: Ar-Rahman (55)
