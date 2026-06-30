@@ -8,6 +8,10 @@ import QuraniKit
     let catalog = CatalogStore()
     let favorites = FavoritesStore()
     let pool = MixPoolStore()
+    let library = LibraryStore()
+    /// Owns the import pipeline (Add-files panel, drag-drop, watched folder). Holds the
+    /// `pendingImports` the review sheet (Task 7) confirms; observe it directly from views.
+    let importer: LibraryImporter
     @Published var surahs: [Surah] = []
 
     // App-lifetime singletons: created exactly once in `init` (see C1). `bootstrap()`
@@ -22,6 +26,7 @@ import QuraniKit
         self.engine = engine
         self.sources = SourcesStore()
         self.bridge = NowPlayingBridge(engine: engine)
+        self.importer = LibraryImporter(library: library)
 
         // Register media-key / remote-command targets and the global hotkey once.
         Hotkeys.register(engine)
@@ -41,6 +46,8 @@ import QuraniKit
         didLoad = true
         surahs = (try? QuranData.loadSurahs()) ?? []
         engine.attachSurahs(surahs)
+        importer.surahs = surahs
+        importer.startWatching()   // best-effort; a no-op until a library folder is granted
         try? sources.loadFeatured()
         await sources.loadReciterStations { try await SourcesStore.fetchRadios() }
         await catalog.load { try await CatalogStore.fetchReciters() }
@@ -52,5 +59,20 @@ import QuraniKit
         let url = CatalogService.audioURL(serverBase: moshaf.serverBase, surah: surah.number)
         engine.play(.onDemand(reciterID: reciter.id, reciterName: reciter.name,
                               moshafID: moshaf.id, surah: surah, url: url))
+    }
+
+    /// Commit the review sheet's confirmed imports to the library, then drop them from the pending
+    /// list. Each `ReviewedImport` pairs with its `PendingImport` by id to recover the security-scoped
+    /// bookmark, confidence, and duration captured at import time.
+    func commitImports(_ reviewed: [ReviewedImport]) {
+        let byID = Dictionary(importer.pendingImports.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let tracks = reviewed.compactMap { r -> LocalTrack? in
+            guard let pending = byID[r.pendingID] else { return nil }
+            return LocalTrack(bookmark: pending.bookmark, reciterName: r.reciterName,
+                              surahNumber: r.surahNumber, confidence: pending.guess.confidence,
+                              durationMs: pending.durationMs)
+        }
+        library.add(tracks)
+        importer.clearPending(ids: Set(reviewed.map(\.pendingID)))
     }
 }
