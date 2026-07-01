@@ -13,52 +13,90 @@ struct LiveTabView: View {
     /// `collapsedCount` by default with a Show-all / Show-fewer toggle so the tab isn't an endless scroll.
     @State private var stationsExpanded = false
     @State private var worldExpanded = false
+    @State private var query = ""
     private let collapsedCount = 8
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 2) {
-                // Favorited stations float to the top, in FEATURED → WORLD → RECITER order.
-                let favs = favoriteStations
-                if !favs.isEmpty {
-                    section("★ FAVORITES")
-                    ForEach(favs) { st in stationRow(st) }
+        VStack(spacing: 0) {
+            searchField
+            ScrollView {
+                VStack(alignment: .leading, spacing: 2) {
+                    if query.isEmpty { sectionedList } else { searchResults }
                 }
-
-                section("FEATURED · LIVE")
-                ForEach(sources.featured) { st in stationRow(st) }
-
-                if !sources.world.isEmpty {
-                    section("WORLD QURAN RADIO")
-                    if worldExpanded {
-                        // Grouped by region (first-appearance order) so ~36 stations across ~20
-                        // countries read as a browsable list rather than a flat wall.
-                        ForEach(worldRegions, id: \.self) { region in
-                            regionHeader(region)
-                            ForEach(sources.world.filter { $0.region == region }) { st in stationRow(st) }
-                        }
-                    } else {
-                        ForEach(Array(sources.world.prefix(collapsedCount))) { st in stationRow(st) }
-                    }
-                    if sources.world.count > collapsedCount {
-                        toggleRow(expanded: worldExpanded, total: sources.world.count) { worldExpanded.toggle() }
-                    }
-                }
-
-                if !sources.reciterStations.isEmpty {
-                    section("RECITER STATIONS · 24/7")
-                    let stations = stationsExpanded
-                        ? sources.reciterStations
-                        : Array(sources.reciterStations.prefix(collapsedCount))
-                    ForEach(stations) { st in stationRow(st) }
-                    if sources.reciterStations.count > collapsedCount {
-                        toggleRow(expanded: stationsExpanded, total: sources.reciterStations.count) { stationsExpanded.toggle() }
-                    }
-                }
+                .padding(.horizontal, 8)
             }
-            .padding(.horizontal, 8)
         }
         .frame(height: 300)
+    }
+
+    /// Normal browse view: Favorites → Featured → World → Reciter, each with its own collapse.
+    @ViewBuilder private var sectionedList: some View {
+        let favs = favoriteStations
+        if !favs.isEmpty {
+            section("★ FAVORITES")
+            ForEach(favs) { st in stationRow(st) }
+        }
+
+        section("FEATURED · LIVE")
+        ForEach(sources.featured) { st in stationRow(st) }
+
+        if !sources.world.isEmpty {
+            section("WORLD QURAN RADIO")
+            if worldExpanded {
+                ForEach(worldRegions, id: \.self) { region in
+                    regionHeader(region)
+                    ForEach(sources.world.filter { $0.region == region }) { st in stationRow(st) }
+                }
+            } else {
+                ForEach(Array(sources.world.prefix(collapsedCount))) { st in stationRow(st) }
+            }
+            if sources.world.count > collapsedCount {
+                toggleRow(expanded: worldExpanded, total: sources.world.count) { worldExpanded.toggle() }
+            }
+        }
+
+        if !sources.reciterStations.isEmpty {
+            section("RECITER STATIONS · 24/7")
+            let stations = stationsExpanded
+                ? sources.reciterStations
+                : Array(sources.reciterStations.prefix(collapsedCount))
+            ForEach(stations) { st in stationRow(st) }
+            if sources.reciterStations.count > collapsedCount {
+                toggleRow(expanded: stationsExpanded, total: sources.reciterStations.count) { stationsExpanded.toggle() }
+            }
+        }
+    }
+
+    /// Flat filtered view across every source (name or region), shown while the search box is non-empty.
+    @ViewBuilder private var searchResults: some View {
+        let q = query.lowercased()
+        let results = (sources.featured + sources.world + sources.reciterStations)
+            .filter { $0.name.lowercased().contains(q) || $0.region.lowercased().contains(q) }
+        if results.isEmpty {
+            Text("No stations match “\(query)”")
+                .font(.system(size: 12)).foregroundStyle(tokens.muted)
+                .frame(maxWidth: .infinity, alignment: .center).padding(.top, 24)
+        } else {
+            section("RESULTS · \(results.count)")
+            ForEach(results) { st in stationRow(st) }
+        }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass").font(.system(size: 11, weight: .semibold)).foregroundStyle(tokens.muted)
+            TextField("Search stations & countries", text: $query)
+                .textFieldStyle(.plain).font(.system(size: 12)).foregroundStyle(tokens.text)
+            if !query.isEmpty {
+                Button { query = "" } label: {
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 12)).foregroundStyle(tokens.muted)
+                }.buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 9).padding(.vertical, 6)
+        .background(tokens.glassTint, in: RoundedRectangle(cornerRadius: 9))
+        .overlay(RoundedRectangle(cornerRadius: 9).stroke(tokens.text.opacity(0.08), lineWidth: 1))
+        .padding(.horizontal, 8).padding(.top, 8).padding(.bottom, 4)
     }
 
     /// A station row with a favorite star + play-on-tap. Used by every section.
