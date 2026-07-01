@@ -104,6 +104,11 @@ import QuraniKit
             }
             .store(in: &cancellables)
 
+        // Hardware ⏮/⏭ (media keys / Control Center) drive mix skip; the buttons' enabled state is
+        // refreshed from queue position as the mix advances/stops (see playMixIndex / stopMix).
+        bridge.onNext = { [weak self] in self?.mixNext() }
+        bridge.onPrevious = { [weak self] in self?.mixPrevious() }
+
         try? sources.loadFeatured()
         try? sources.loadWorld()
         await sources.loadReciterStations { try await SourcesStore.fetchRadios() }
@@ -284,6 +289,7 @@ import QuraniKit
             retainLocalScope(url)   // release the prior local scope, hold this one (≤1 outstanding)
             engine.play(.localTrack(track: track, url: url))
         }
+        bridge.setMixSkip(hasPrevious: mixHasPrevious, hasNext: mixHasNext)
     }
 
     /// Advance to the next queue item when the current one finishes; stop the session at the tail.
@@ -328,6 +334,7 @@ import QuraniKit
         engine.stop()
         mixQueue = []
         releaseLocalScope()   // drop any local file scope the mix was holding
+        bridge.setMixSkip(hasPrevious: false, hasNext: false)
     }
 
     /// Rebuild `mixQueue` from the retained `mixPool` + `mixConfig` using system-RNG randomness.

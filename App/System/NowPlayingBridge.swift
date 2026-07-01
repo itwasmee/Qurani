@@ -3,6 +3,12 @@ import QuraniKit
 
 @MainActor final class NowPlayingBridge {
     private let engine: PlaybackEngine
+    /// Hardware ⏭/⏮ (media keys, Control Center, headphones) → mix skip. Set by `AppModel`.
+    var onNext: (() -> Void)?
+    var onPrevious: (() -> Void)?
+    private var mediaKeysOn = true
+    private var hasPrev = false
+    private var hasNext = false
     init(engine: PlaybackEngine) {
         self.engine = engine
         let c = MPRemoteCommandCenter.shared()
@@ -21,6 +27,17 @@ import QuraniKit
             Task { @MainActor in engine?.toggle() }
             return .success
         }
+        c.nextTrackCommand.addTarget { [weak self] _ in
+            Task { @MainActor in self?.onNext?() }
+            return .success
+        }
+        c.previousTrackCommand.addTarget { [weak self] _ in
+            Task { @MainActor in self?.onPrevious?() }
+            return .success
+        }
+        // Off until a mix is active with somewhere to skip (see setMixSkip).
+        c.nextTrackCommand.isEnabled = false
+        c.previousTrackCommand.isEnabled = false
     }
 
     /// Gate the hardware media keys / Control Center transport on the Settings "Media keys" toggle.
@@ -30,10 +47,25 @@ import QuraniKit
     /// / `updatePlaybackState` metadata below) is deliberately untouched, so the lock screen and
     /// Control Center keep *showing* what's playing even while the keys don't control it.
     func setMediaKeysEnabled(_ on: Bool) {
+        mediaKeysOn = on
         let c = MPRemoteCommandCenter.shared()
         c.playCommand.isEnabled = on
         c.pauseCommand.isEnabled = on
         c.togglePlayPauseCommand.isEnabled = on
+        refreshSkip()
+    }
+
+    /// Enable ⏮/⏭ only while a mix has somewhere to skip AND media keys are on. `AppModel` calls
+    /// this as the queue advances/stops so the system greys the arrows out at the queue's ends.
+    func setMixSkip(hasPrevious: Bool, hasNext: Bool) {
+        hasPrev = hasPrevious
+        self.hasNext = hasNext
+        refreshSkip()
+    }
+    private func refreshSkip() {
+        let c = MPRemoteCommandCenter.shared()
+        c.previousTrackCommand.isEnabled = mediaKeysOn && hasPrev
+        c.nextTrackCommand.isEnabled = mediaKeysOn && hasNext
     }
 
     /// Reflect the just-emitted now-playing value. `@Published` fires in `willSet`,
