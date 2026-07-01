@@ -12,12 +12,18 @@ struct SurahNameView: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Text("\(number)")
-                .font(.custom("Noto Naskh Arabic", size: 12.5).weight(.bold))
-                .frame(width: 26, height: 26)
-                .overlay(Circle().stroke(playing ? tokens.accent : tokens.muted.opacity(0.5), lineWidth: 1.4))
-                .foregroundStyle(playing ? tokens.accent : tokens.muted)
-                .offset(y: 1)   // optical centering (matches mockup padding-top:4px)
+            ZStack {
+                Circle().stroke(playing ? tokens.accent : tokens.muted.opacity(0.5), lineWidth: 1.4)
+                // Noto Naskh's tall metrics render digits high in their line box, so a
+                // frame-centered glyph sits above the ring's middle. Nudge only the text
+                // down (the ring stays put) to optically center — mockup `.med` padding-top:4px.
+                Text("\(number)")
+                    .font(.custom("Noto Naskh Arabic", size: 12.5).weight(.bold))
+                    .monospacedDigit()          // mockup font-feature-settings:"tnum"
+                    .foregroundStyle(playing ? tokens.accent : tokens.muted)
+                    .offset(y: 2)
+            }
+            .frame(width: 26, height: 26)
             VStack(alignment: .trailing, spacing: 1) {
                 Text(nameAr).font(.custom("Amiri Quran", size: 18)).foregroundStyle(tokens.text)
                 Text(translit).font(.system(size: 10)).foregroundStyle(tokens.muted)
