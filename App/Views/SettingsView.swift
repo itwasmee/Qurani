@@ -37,6 +37,7 @@ struct SettingsView: View {
                     appearanceSection
                     hotkeyRow
                     mediaKeysRow
+                    autoplayRow
                     sectionLabel("LIBRARY")
                     libraryFolderRow
                     autoImportRow
@@ -146,6 +147,13 @@ struct SettingsView: View {
     private var mediaKeysRow: some View {
         settingRow(icon: "forward.fill", title: "Media keys", subtitle: "▶︎ ⏸ ⏭ & Control Center") {
             toggle($settings.mediaKeysEnabled)
+        }
+    }
+
+    private var autoplayRow: some View {
+        settingRow(icon: "play.circle.fill", title: "Autoplay next surah",
+                   subtitle: "Continue through the reciter") {
+            toggle($settings.autoplayEnabled)
         }
     }
 
