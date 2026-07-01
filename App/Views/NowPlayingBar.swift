@@ -15,6 +15,12 @@ struct NowPlayingBar: View {
     /// button and the scrubber stay independently interactive. Defaults to a no-op so other call sites
     /// (and the snapshot renderer) compile unchanged.
     var onTapSource: () -> Void = {}
+    /// Mix skip controls — ⏮/⏭ shown only while `isMixing`. Nil/false for other sources and the
+    /// snapshot renderer, so the bar keeps its single play/pause button off a mix.
+    var onMixPrev: (() -> Void)? = nil
+    var onMixNext: (() -> Void)? = nil
+    var mixHasPrevious: Bool = false
+    var mixHasNext: Bool = false
     /// Fraction (0…1) under the finger while scrubbing, so the thumb tracks the drag
     /// immediately instead of waiting for the engine's next reported position. `nil` when
     /// not dragging — the track then follows `nowPlaying.elapsed/duration`.
@@ -111,6 +117,15 @@ struct NowPlayingBar: View {
                 }
                 .buttonStyle(NowPlayingSourceButtonStyle())
                 .help("Go to what's playing")
+                if isMixing, let onMixPrev {
+                    Button(action: onMixPrev) {
+                        Image(systemName: "backward.fill")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(mixHasPrevious ? tokens.text : tokens.muted.opacity(0.4))
+                            .frame(width: 26, height: 32)
+                    }
+                    .buttonStyle(.plain).disabled(!mixHasPrevious).help("Previous surah")
+                }
                 Button { engine.toggle() } label: {
                     Image(systemName: engine.status == .playing ? "pause.fill" : "play.fill")
                         .font(.system(size: 13, weight: .bold))
@@ -119,6 +134,15 @@ struct NowPlayingBar: View {
                         .background(tokens.text, in: Circle())
                 }
                 .buttonStyle(.plain)
+                if isMixing, let onMixNext {
+                    Button(action: onMixNext) {
+                        Image(systemName: "forward.fill")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(mixHasNext ? tokens.text : tokens.muted.opacity(0.4))
+                            .frame(width: 26, height: 32)
+                    }
+                    .buttonStyle(.plain).disabled(!mixHasNext).help("Next surah")
+                }
             }
             if isMixing, !np.isLive, let upNext { upNextLine(upNext) }
             // On-demand items have a finite length → offer a draggable scrubber. Live keeps

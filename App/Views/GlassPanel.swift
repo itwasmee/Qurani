@@ -87,7 +87,9 @@ struct GlassPanel: View {
 
             NowPlayingBar(engine: engine, tokens: tokens,
                           isMixing: model.isMixing, upNext: upNextDisplay,
-                          onTapSource: { goToNowPlayingSource() })
+                          onTapSource: { goToNowPlayingSource() },
+                          onMixPrev: { model.mixPrevious() }, onMixNext: { model.mixNext() },
+                          mixHasPrevious: model.mixHasPrevious, mixHasNext: model.mixHasNext)
         }
         .frame(width: 344)
         .background {

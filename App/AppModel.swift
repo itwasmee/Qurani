@@ -297,6 +297,20 @@ import QuraniKit
         }
     }
 
+    /// Skip forward to the next surah in the mix (⏭). Same as a natural finish — stops at the tail.
+    func mixNext() { guard isMixing else { return }; advanceMix() }
+
+    /// Skip back to the previous surah in the mix (⏮); no-op at the head of the queue.
+    func mixPrevious() {
+        guard isMixing else { return }
+        let prev = mixIndex - 1
+        if mixQueue.indices.contains(prev) { playMixIndex(prev) }
+    }
+
+    /// True when there is a previous/next item to skip to — drives the ⏮/⏭ enabled state.
+    var mixHasPrevious: Bool { isMixing && mixQueue.indices.contains(mixIndex - 1) }
+    var mixHasNext: Bool { isMixing && mixQueue.indices.contains(mixIndex + 1) }
+
     /// Re-roll the session: rebuild the queue from the same pool + config with a fresh random
     /// assignment and ordering, then restart from the top of the new queue.
     func rerollMix() {
