@@ -11,6 +11,8 @@ import Foundation
     @Published public var mediaKeysEnabled: Bool = true { didSet { save() } }
     /// Whether the watched library folder auto-imports (and smart-tags) new files.
     @Published public var autoImportEnabled: Bool = true { didSet { save() } }
+    /// Whether finishing an on-demand surah auto-advances to the next surah in the reciter's moshaf.
+    @Published public var autoplayEnabled: Bool = true { didSet { save() } }
 
     private let fileURL: URL
     /// Suppresses the `save()` that the init-body load triggers: the `= true` declarations mean the
@@ -26,6 +28,7 @@ import Foundation
         if let stored = Self.load(fileURL) {
             mediaKeysEnabled = stored.mediaKeysEnabled
             autoImportEnabled = stored.autoImportEnabled
+            autoplayEnabled = stored.autoplayEnabled
         }
         loaded = true
     }
@@ -40,6 +43,7 @@ import Foundation
     private struct Persisted: Codable {
         var mediaKeysEnabled = true
         var autoImportEnabled = true
+        var autoplayEnabled = true
     }
 
     /// Decode the JSON file; a missing or corrupt/garbage file yields nil → caller keeps defaults.
@@ -57,7 +61,8 @@ import Foundation
         guard loaded else { return }
         try? FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(),
                                                  withIntermediateDirectories: true)
-        let snapshot = Persisted(mediaKeysEnabled: mediaKeysEnabled, autoImportEnabled: autoImportEnabled)
+        let snapshot = Persisted(mediaKeysEnabled: mediaKeysEnabled, autoImportEnabled: autoImportEnabled,
+                                 autoplayEnabled: autoplayEnabled)
         guard let data = try? JSONEncoder().encode(snapshot) else { return }
         try? data.write(to: fileURL, options: .atomic)
     }

@@ -27,6 +27,16 @@ import Foundation
     #expect(b.mediaKeysEnabled)
 }
 
+@MainActor @Test func autoplayDefaultsOnAndPersistsOff() throws {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let a = SettingsStore(directory: dir)
+    #expect(a.autoplayEnabled == true)        // default on
+    a.autoplayEnabled = false
+    let b = SettingsStore(directory: dir)     // reload from disk
+    #expect(b.autoplayEnabled == false)
+    #expect(b.mediaKeysEnabled)               // untouched preference keeps its default
+}
+
 @MainActor @Test func corruptSettingsFileLoadsAsDefaults() throws {
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     let a = SettingsStore(directory: dir)
