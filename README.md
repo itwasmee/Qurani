@@ -28,23 +28,23 @@ The signature feature: play a surah range where **each surah is recited by a ran
 
 ## Install
 
-Build from source and drop straight into `/Applications`:
+**Download the app — easiest.** Grab the latest [**Qurani.dmg**](https://github.com/itwasmee/Qurani/releases/latest), open it, and drag **Qurani** onto **Applications**. The app is unsigned (no paid Apple Developer ID), so on first launch macOS asks once — open **System Settings → Privacy & Security** and click **Open Anyway**.
+
+**One line — skips that step.** Downloads the app, installs it to `/Applications`, and clears the Gatekeeper flag for you:
+
+```sh
+curl -fsSL https://itwasmee.github.io/Qurani/get.sh | bash
+```
+
+**Build from source.** Needs Xcode 26+ and Swift 6:
 
 ```sh
 git clone https://github.com/itwasmee/Qurani.git
 cd Qurani
-./install.sh
+./install.sh          # builds Release, installs to /Applications, relaunches
 ```
 
-`install.sh` builds a Release binary, quits any running copy, installs to `/Applications/Qurani.app`, and relaunches. Look for the equalizer icon in your menubar.
-
-**Update later:**
-
-```sh
-git pull && ./install.sh
-```
-
-**Requirements:** macOS 26 (Tahoe) or newer · Xcode 26+ (macOS 26 SDK) · Swift 6. [`xcodegen`](https://github.com/yonaskolb/XcodeGen) is used to regenerate the project from `project.yml` if installed (optional).
+Re-run `./install.sh` after `git pull` to update. **Requires** macOS 26 (Tahoe) or newer.
 
 ## Tech
 

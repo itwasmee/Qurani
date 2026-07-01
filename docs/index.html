@@ -155,6 +155,23 @@
   .step p{color:var(--mut); font-size:.92rem}
   .step code, .req code{font-family:var(--mono); color:#e7dcbf; background:var(--ink); padding:2px 6px; border-radius:6px; font-size:.84em}
   .req{color:var(--mut); font-size:.92rem} .req b{color:var(--txt)}
+  .btn-lg{padding:12px 22px; font-size:1rem}
+  .hint{color:var(--mut); font-size:.85rem; margin-top:12px}
+  .hint a{color:var(--gold)}
+  /* install: two ways */
+  .ways{display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-bottom:22px}
+  .way{background:var(--ink-2); border:1px solid var(--gold-faint); border-radius:18px; padding:26px; display:flex; flex-direction:column}
+  .way-h{display:flex; align-items:center; gap:12px; margin-bottom:8px}
+  .way-n{width:32px; height:32px; flex:none; border-radius:50%; border:1px solid var(--gold-line); display:grid; place-items:center; font-family:var(--q); font-size:1.15rem; color:var(--gold)}
+  .way-h h3{color:var(--head); font-weight:700; font-size:1.15rem}
+  .way>p{color:var(--mut); font-size:.95rem; margin-bottom:16px}
+  .mini{list-style:none; margin:0 0 20px; padding:0; display:grid; gap:10px}
+  .mini li{color:var(--txt); font-size:.92rem; padding-left:20px; position:relative; line-height:1.45}
+  .mini li::before{content:""; position:absolute; left:2px; top:.5em; width:6px; height:6px; border-radius:50%; background:var(--gold); opacity:.7}
+  .mini li b{color:var(--head); font-weight:600}
+  .way .btn{align-self:flex-start; margin-top:auto}
+  .sub{color:var(--mut); font-size:.82rem; margin-top:14px}
+  .sub code{font-family:var(--mono); color:#e7dcbf; background:var(--ink); padding:2px 6px; border-radius:6px; font-size:.9em}
 
   footer{margin-top:40px; border-top:1px solid var(--gold-faint); padding:44px 0 60px}
   .foot-in{display:flex; gap:26px; flex-wrap:wrap; align-items:flex-start; justify-content:space-between}
@@ -170,6 +187,7 @@
   @media (max-width:820px){
     .mix{grid-template-columns:1fr; gap:34px}
     .steps{grid-template-columns:1fr}
+    .ways{grid-template-columns:1fr}
     .entry{grid-template-columns:44px 1fr; gap:16px}
     .entry .idx{display:none}
     .nav-link.hide-sm{display:none}
@@ -211,15 +229,11 @@
       <div class="frontispiece"><span class="paren ar">﴾</span><span class="ar" lang="ar">قُرْآنِي</span><span class="paren ar">﴿</span></div>
       <h1>The Qur'an, kept in your <em>menubar</em>.</h1>
       <p class="lead">Live radio from the Haramain, a <b>200+ reciter</b> catalogue you can stream at once, your own local library, and a mix that hands <b>every surah to a different qari</b>. Native, quiet, free.</p>
-      <div class="cmd">
-        <span class="dollar">$</span>
-        <code id="cmd">git clone https://github.com/itwasmee/Qurani.git &amp;&amp; cd Qurani &amp;&amp; ./install.sh</code>
-        <button class="copy" id="copy" aria-label="Copy install command">Copy</button>
-      </div>
       <div class="cta">
-        <a class="btn btn-gold" href="#install">Install it</a>
-        <a class="btn btn-line" href="https://github.com/itwasmee/Qurani" target="_blank" rel="noopener">View source ↗</a>
+        <a class="btn btn-gold btn-lg" href="https://github.com/itwasmee/Qurani/releases/latest/download/Qurani.dmg">↓&nbsp; Download for Mac</a>
+        <a class="btn btn-line" href="#install">Other ways to install</a>
       </div>
+      <p class="hint">Free · macOS 26+ · unsigned, so it needs a one-time <a href="#install">Open&nbsp;Anyway</a> on first launch</p>
     </div>
 
     <figure class="plate-wrap reveal">
@@ -303,15 +317,32 @@
     <div class="divider"><span class="rule"></span><svg><use href="#rose"/></svg><span class="rule"></span></div>
     <div class="section-head mid reveal">
       <span class="eyebrow">Install</span>
-      <h2>Build it, and it's in your menubar.</h2>
-      <p>One command clones, builds a release, installs to <code>/Applications</code>, and relaunches.</p>
+      <h2>Two ways in.</h2>
+      <p>Grab the app, or paste one line. Either way it lands in your menubar.</p>
     </div>
-    <div class="steps">
-      <div class="step reveal"><div class="num ar">١</div><h4>Clone</h4><p><code>git clone …/Qurani.git</code></p></div>
-      <div class="step reveal"><div class="num ar">٢</div><h4>Install</h4><p>Run <code>./install.sh</code> in the repo — it builds, quits any running copy, and installs the app.</p></div>
-      <div class="step reveal"><div class="num ar">٣</div><h4>Listen</h4><p>Click the equalizer in your menubar. Update later with <code>git pull &amp;&amp; ./install.sh</code>.</p></div>
+    <div class="ways">
+      <div class="way reveal">
+        <div class="way-h"><span class="way-n ar">١</span><h3>Download the app</h3></div>
+        <p>For everyone — no tools, no Terminal.</p>
+        <ol class="mini">
+          <li>Download <b>Qurani.dmg</b> and open it.</li>
+          <li>Drag <b>Qurani</b> onto the <b>Applications</b> folder.</li>
+          <li>First launch only: it's unsigned, so macOS asks once — open <b>System Settings → Privacy &amp; Security</b> and click <b>Open Anyway</b>.</li>
+        </ol>
+        <a class="btn btn-gold" href="https://github.com/itwasmee/Qurani/releases/latest/download/Qurani.dmg">↓&nbsp; Download for Mac</a>
+      </div>
+      <div class="way reveal">
+        <div class="way-h"><span class="way-n ar">٢</span><h3>One line, no prompts</h3></div>
+        <p>Paste in Terminal — it installs and clears the Gatekeeper step for you.</p>
+        <div class="cmd">
+          <span class="dollar">$</span>
+          <code id="cmd">curl -fsSL https://itwasmee.github.io/Qurani/get.sh | bash</code>
+          <button class="copy" id="copy" aria-label="Copy install command">Copy</button>
+        </div>
+        <p class="sub">Rather build it yourself? <code>git clone …/Qurani.git &amp;&amp; ./install.sh</code></p>
+      </div>
     </div>
-    <p class="req reveal"><b>Requirements:</b> macOS 26 (Tahoe) or newer · Xcode 26+ · Swift 6. Optional <code>xcodegen</code> regenerates the project from <code>project.yml</code>.</p>
+    <p class="req reveal"><b>Requirements:</b> macOS 26 (Tahoe) or newer. Building from source also needs Xcode 26+ &amp; Swift 6.</p>
   </div>
 </section>
 
