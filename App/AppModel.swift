@@ -9,6 +9,9 @@ import QuraniKit
     /// Favorited live stations (string ids across featured/world/reciter feeds); surfaced in a
     /// section at the top of the Live tab. Uses the real Application Support path.
     let stationFavorites = StationFavoritesStore()
+    /// Replayable history of live/on-demand/local plays (not mix-internal surahs); shown as a strip
+    /// at the top of the Live tab. Uses the real Application Support path.
+    let recents = RecentsStore()
     let favorites: FavoritesStore
     let pool: MixPoolStore
     let library: LibraryStore
@@ -118,11 +121,21 @@ import QuraniKit
     /// Start finite playback of a single surah recitation. Builds the per-surah audio URL
     /// from the moshaf's server base, then hands a `.onDemand` item to the engine.
     func playOnDemand(reciter: Reciter, moshaf: Moshaf, surah: Surah) {
+        startOnDemand(reciterID: reciter.id, reciterName: reciter.name,
+                      moshafID: moshaf.id, serverBase: moshaf.serverBase, surah: surah)
+    }
+
+    /// Shared on-demand start used by `playOnDemand` and `playRecent` (the latter only has raw ids).
+    private func startOnDemand(reciterID: Int, reciterName: String, moshafID: Int, serverBase: URL, surah: Surah) {
         if isMixing { stopMix() }   // an explicit single play ends any active random-mix session
         releaseLocalScope()         // switching to a streamed source — drop any held local file scope
-        let url = CatalogService.audioURL(serverBase: moshaf.serverBase, surah: surah.number)
-        engine.play(.onDemand(reciterID: reciter.id, reciterName: reciter.name,
-                              moshafID: moshaf.id, surah: surah, url: url))
+        let url = CatalogService.audioURL(serverBase: serverBase, surah: surah.number)
+        engine.play(.onDemand(reciterID: reciterID, reciterName: reciterName,
+                              moshafID: moshafID, surah: surah, url: url))
+        recents.record(RecentItem(sourceID: "ondemand:\(reciterID):\(moshafID):\(surah.number)",
+                                  kind: .onDemand, title: surah.translit, subtitle: reciterName,
+                                  reciterID: reciterID, reciterName: reciterName, moshafID: moshafID,
+                                  serverBase: serverBase.absoluteString, surahNumber: surah.number))
     }
 
     /// Play a library-imported local file. Resolving the track's security-scoped bookmark begins
@@ -134,6 +147,9 @@ import QuraniKit
         if isMixing { stopMix() }   // an explicit single play ends any active random-mix session
         retainLocalScope(url)       // release the prior local scope; keep at most one outstanding
         engine.play(.localTrack(track: track, url: url))
+        recents.record(RecentItem(sourceID: "local:\(track.id.uuidString)", kind: .local,
+                                  title: surahs.first { $0.number == track.surahNumber }?.translit ?? "Surah \(track.surahNumber)",
+                                  subtitle: track.reciterName, trackID: track.id.uuidString))
     }
 
     /// Play a live radio station. Routed through here (not `engine.playStation` directly) so an
@@ -144,6 +160,31 @@ import QuraniKit
         if isMixing { stopMix() }
         releaseLocalScope()   // switching to live — drop any held local file scope
         engine.playStation(s)
+        recents.record(RecentItem(sourceID: "live:\(s.id)", kind: .live, title: s.name,
+                                  subtitle: s.region, stationID: s.id))
+    }
+
+    /// Replay a history item — reconstruct its `PlaybackItem` and play (recording moves it to front).
+    /// A source that no longer resolves (station pulled, track file gone) is a silent no-op.
+    func playRecent(_ item: RecentItem) {
+        switch item.kind {
+        case .live:
+            guard let id = item.stationID,
+                  let st = (sources.featured + sources.world + sources.reciterStations).first(where: { $0.id == id })
+            else { return }
+            playStation(st)
+        case .onDemand:
+            guard let rID = item.reciterID, let rName = item.reciterName, let mID = item.moshafID,
+                  let base = item.serverBase, let baseURL = URL(string: base), let n = item.surahNumber,
+                  let surah = surahs.first(where: { $0.number == n })
+            else { return }
+            startOnDemand(reciterID: rID, reciterName: rName, moshafID: mID, serverBase: baseURL, surah: surah)
+        case .local:
+            guard let tid = item.trackID,
+                  let track = library.tracks.first(where: { $0.id.uuidString == tid })
+            else { return }
+            playLocal(track)
+        }
     }
 
     // MARK: - Local file scope

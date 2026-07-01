@@ -5,10 +5,13 @@ struct LiveTabView: View {
     @ObservedObject var sources: SourcesStore
     @ObservedObject var engine: PlaybackEngine
     @ObservedObject var stationFavorites: StationFavoritesStore
+    @ObservedObject var recents: RecentsStore
     let tokens: Tokens
     /// Plays a station via `AppModel.playStation` (which ends any active mix first) — not
     /// `engine.playStation` directly, so a live pick can't leave a stale mix session running.
     let play: (Station) -> Void
+    /// Replay a history entry (`AppModel.playRecent`).
+    let playRecent: (RecentItem) -> Void
     /// The reciter list is ~170 stations and the world list is ~36; collapse each to the first
     /// `collapsedCount` by default with a Show-all / Show-fewer toggle so the tab isn't an endless scroll.
     @State private var stationsExpanded = false
@@ -19,6 +22,7 @@ struct LiveTabView: View {
     var body: some View {
         VStack(spacing: 0) {
             searchField
+            if query.isEmpty, !recents.items.isEmpty { recentsStrip }
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
                     if query.isEmpty { sectionedList } else { searchResults }
@@ -97,6 +101,42 @@ struct LiveTabView: View {
         .background(tokens.glassTint, in: RoundedRectangle(cornerRadius: 9))
         .overlay(RoundedRectangle(cornerRadius: 9).stroke(tokens.text.opacity(0.08), lineWidth: 1))
         .padding(.horizontal, 8).padding(.top, 8).padding(.bottom, 4)
+    }
+
+    /// Horizontal strip of the last few played items (any source) for one-tap replay.
+    private var recentsStrip: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("RECENTLY PLAYED").font(.system(size: 9.5, weight: .bold)).tracking(1.4)
+                .foregroundStyle(tokens.muted).padding(.horizontal, 8).padding(.top, 4)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(recents.items.prefix(8)) { item in
+                        Button { playRecent(item) } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: recentGlyph(item.kind)).font(.system(size: 10, weight: .semibold))
+                                Text(item.title).font(.system(size: 11, weight: .medium)).lineLimit(1)
+                            }
+                            .foregroundStyle(tokens.text)
+                            .padding(.horizontal, 9).padding(.vertical, 5)
+                            .background(tokens.glassTint, in: Capsule())
+                            .overlay(Capsule().stroke(tokens.text.opacity(0.08), lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Replay \(item.title) — \(item.subtitle)")
+                    }
+                }
+                .padding(.horizontal, 8)
+            }
+        }
+        .padding(.bottom, 4)
+    }
+
+    private func recentGlyph(_ k: RecentKind) -> String {
+        switch k {
+        case .live: return "dot.radiowaves.left.and.right"
+        case .onDemand: return "person.fill"
+        case .local: return "music.note"
+        }
     }
 
     /// A station row with a favorite star + play-on-tap. Used by every section.
