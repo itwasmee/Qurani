@@ -2,6 +2,7 @@ import Foundation
 
 @MainActor public final class SourcesStore: ObservableObject {
     @Published public private(set) var featured: [Station] = []
+    @Published public private(set) var world: [Station] = []
     @Published public private(set) var reciterStations: [Station] = []
     private let bundle: Bundle
     // `.module` is generated as an internal accessor, so it cannot be a default
@@ -10,6 +11,7 @@ import Foundation
     public convenience init() { self.init(bundle: .module) }
 
     public func loadFeatured() throws { featured = try CuratedStations.load(bundle: bundle) }
+    public func loadWorld() throws { world = try CuratedStations.loadWorld(bundle: bundle) }
 
     #if DEBUG
     /// Inject already-decoded stations directly. For the `--snapshot` render path, which needs

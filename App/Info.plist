@@ -6,6 +6,9 @@
   <key>ATSApplicationFontsPath</key><string>.</string>
   <key>NSAppTransportSecurity</key>
   <dict>
+    <!-- Several world Qur'an radios are http-only (bare-IP / Mixlr / Shoutcast). This allows
+         AVFoundation media loads over http without enumerating every host. -->
+    <key>NSAllowsArbitraryLoadsForMedia</key><true/>
     <key>NSExceptionDomains</key>
     <dict>
       <!-- radiojar 302s the Egypt feed to insecure HTTP; qurango icecast is HTTP.

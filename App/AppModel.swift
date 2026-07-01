@@ -102,6 +102,7 @@ import QuraniKit
             .store(in: &cancellables)
 
         try? sources.loadFeatured()
+        try? sources.loadWorld()
         await sources.loadReciterStations { try await SourcesStore.fetchRadios() }
         await catalog.load { try await CatalogStore.fetchReciters() }
     }
