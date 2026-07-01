@@ -1,0 +1,48 @@
+name: Release
+
+# Build, package, and publish a GitHub Release whenever a v* tag is pushed:
+#   git tag v1.0.1 && git push origin v1.0.1
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write   # needed to create the release + upload assets
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select latest Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Build & package
+        run: bash scripts/package.sh
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/Qurani.dmg
+            dist/Qurani.zip
+          generate_release_notes: true
+          body: |
+            A minimal macOS menubar app for the Qur'an — live radio, 200+ reciters, a personal library, and a random-qari mix.
+
+            ## Easiest install
+            Paste in Terminal (installs to /Applications and skips the Gatekeeper prompt):
+            ```
+            curl -fsSL https://itwasmee.github.io/Qurani/get.sh | bash
+            ```
+
+            ## Manual
+            Download **Qurani.dmg** below, open it, and drag **Qurani** onto **Applications**. The app is unsigned (no Apple Developer ID), so on first launch macOS asks once — **System Settings → Privacy & Security → Open Anyway**.
+
+            Requires macOS 26 (Tahoe) or newer.
