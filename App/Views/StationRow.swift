@@ -5,6 +5,10 @@ struct StationRow: View {
     let station: Station
     let tokens: Tokens
     let isPlaying: Bool
+    var isFavorite: Bool = false
+    /// When set, a star button appears trailing; tapping it toggles the favorite without
+    /// triggering the row's play tap (a `Button` swallows its own tap).
+    var onToggleFavorite: (() -> Void)? = nil
 
     private var isFeatured: Bool { station.reciter == nil }   // curated live feeds have no reciter
     private var iconName: String {
@@ -35,6 +39,15 @@ struct StationRow: View {
             }
             Spacer()
             if isPlaying { EqualizerDots(color: tokens.accent) }
+            if let onToggleFavorite {
+                Button(action: onToggleFavorite) {
+                    Image(systemName: isFavorite ? "star.fill" : "star")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(isFavorite ? tokens.gold : tokens.muted.opacity(0.55))
+                }
+                .buttonStyle(.plain)
+                .help(isFavorite ? "Remove from favorites" : "Add to favorites")
+            }
         }
         .padding(.vertical, 6).padding(.horizontal, 8)
         .background(isPlaying ? tokens.accent.opacity(0.10) : .clear, in: RoundedRectangle(cornerRadius: 12))

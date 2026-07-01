@@ -4,11 +4,12 @@ import QuraniKit
 struct LiveTabView: View {
     @ObservedObject var sources: SourcesStore
     @ObservedObject var engine: PlaybackEngine
+    @ObservedObject var stationFavorites: StationFavoritesStore
     let tokens: Tokens
     /// Plays a station via `AppModel.playStation` (which ends any active mix first) — not
     /// `engine.playStation` directly, so a live pick can't leave a stale mix session running.
     let play: (Station) -> Void
-    /// The reciter list is ~170 stations and the world list is ~37; collapse each to the first
+    /// The reciter list is ~170 stations and the world list is ~36; collapse each to the first
     /// `collapsedCount` by default with a Show-all / Show-fewer toggle so the tab isn't an endless scroll.
     @State private var stationsExpanded = false
     @State private var worldExpanded = false
@@ -17,29 +18,27 @@ struct LiveTabView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 2) {
-                section("FEATURED · LIVE")
-                ForEach(sources.featured) { st in
-                    StationRow(station: st, tokens: tokens, isPlaying: isPlaying(st))
-                        .onTapGesture { play(st) }
+                // Favorited stations float to the top, in FEATURED → WORLD → RECITER order.
+                let favs = favoriteStations
+                if !favs.isEmpty {
+                    section("★ FAVORITES")
+                    ForEach(favs) { st in stationRow(st) }
                 }
+
+                section("FEATURED · LIVE")
+                ForEach(sources.featured) { st in stationRow(st) }
 
                 if !sources.world.isEmpty {
                     section("WORLD QURAN RADIO")
                     if worldExpanded {
-                        // Grouped by region (first-appearance order) so 37 stations across ~20
+                        // Grouped by region (first-appearance order) so ~36 stations across ~20
                         // countries read as a browsable list rather than a flat wall.
                         ForEach(worldRegions, id: \.self) { region in
                             regionHeader(region)
-                            ForEach(sources.world.filter { $0.region == region }) { st in
-                                StationRow(station: st, tokens: tokens, isPlaying: isPlaying(st))
-                                    .onTapGesture { play(st) }
-                            }
+                            ForEach(sources.world.filter { $0.region == region }) { st in stationRow(st) }
                         }
                     } else {
-                        ForEach(Array(sources.world.prefix(collapsedCount))) { st in
-                            StationRow(station: st, tokens: tokens, isPlaying: isPlaying(st))
-                                .onTapGesture { play(st) }
-                        }
+                        ForEach(Array(sources.world.prefix(collapsedCount))) { st in stationRow(st) }
                     }
                     if sources.world.count > collapsedCount {
                         toggleRow(expanded: worldExpanded, total: sources.world.count) { worldExpanded.toggle() }
@@ -51,10 +50,7 @@ struct LiveTabView: View {
                     let stations = stationsExpanded
                         ? sources.reciterStations
                         : Array(sources.reciterStations.prefix(collapsedCount))
-                    ForEach(stations) { st in
-                        StationRow(station: st, tokens: tokens, isPlaying: isPlaying(st))
-                            .onTapGesture { play(st) }
-                    }
+                    ForEach(stations) { st in stationRow(st) }
                     if sources.reciterStations.count > collapsedCount {
                         toggleRow(expanded: stationsExpanded, total: sources.reciterStations.count) { stationsExpanded.toggle() }
                     }
@@ -63,6 +59,20 @@ struct LiveTabView: View {
             .padding(.horizontal, 8)
         }
         .frame(height: 300)
+    }
+
+    /// A station row with a favorite star + play-on-tap. Used by every section.
+    @ViewBuilder private func stationRow(_ st: Station) -> some View {
+        StationRow(station: st, tokens: tokens, isPlaying: isPlaying(st),
+                   isFavorite: stationFavorites.contains(st.id),
+                   onToggleFavorite: { stationFavorites.toggle(station: st.id) })
+            .onTapGesture { play(st) }
+    }
+
+    /// Favorited stations resolved across every source, kept in FEATURED → WORLD → RECITER order.
+    private var favoriteStations: [Station] {
+        (sources.featured + sources.world + sources.reciterStations)
+            .filter { stationFavorites.contains($0.id) }
     }
 
     /// Unique world regions in first-appearance order (the JSON is authored grouped by country).

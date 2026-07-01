@@ -6,6 +6,9 @@ import QuraniKit
     let engine: PlaybackEngine
     let sources: SourcesStore
     let catalog = CatalogStore()
+    /// Favorited live stations (string ids across featured/world/reciter feeds); surfaced in a
+    /// section at the top of the Live tab. Uses the real Application Support path.
+    let stationFavorites = StationFavoritesStore()
     let favorites: FavoritesStore
     let pool: MixPoolStore
     let library: LibraryStore
