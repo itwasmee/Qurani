@@ -1,4 +1,4 @@
-public enum PlayerStatus: Sendable, Equatable { case idle, loading, playing, paused, failed(String) }
+public enum PlayerStatus: Sendable, Equatable { case idle, loading, playing, paused, reconnecting, failed(String) }
 
 public struct NowPlaying: Sendable, Equatable {
     public var title: String

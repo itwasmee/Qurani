@@ -93,7 +93,7 @@ import QuraniKit
     func updatePlaybackState(_ status: PlayerStatus) {
         let state: MPNowPlayingPlaybackState
         switch status {
-        case .playing, .loading: state = .playing   // buffering reads as play intent
+        case .playing, .loading, .reconnecting: state = .playing   // buffering / reconnecting reads as play intent
         case .paused:            state = .paused
         case .idle, .failed:     state = .stopped
         }

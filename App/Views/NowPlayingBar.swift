@@ -27,6 +27,9 @@ struct NowPlayingBar: View {
     @State private var dragFraction: Double?
 
     private var isFailed: Bool { if case .failed = engine.status { return true } else { return false } }
+    /// A live stream dropped and the engine is silently retrying (see `PlaybackEngine`'s auto-reconnect).
+    /// Swaps the reciter/region subtitle for a "Reconnecting…" hint while the attempts run.
+    private var isReconnecting: Bool { engine.status == .reconnecting }
     /// A library-imported local file is loaded — drives the gold 📚 LIBRARY source chip (mirrors how
     /// live shows the red LIVE pill; on-demand has no chip). Keyed on the source-id prefix.
     private var isLocal: Bool { engine.currentSourceID?.hasPrefix("local:") ?? false }
@@ -108,7 +111,12 @@ struct NowPlayingBar: View {
                                         .padding(.horizontal, 5).padding(.vertical, 2)
                                         .background(tokens.gold.opacity(0.16), in: RoundedRectangle(cornerRadius: 5))
                                 }
-                                Text(np.subtitle).font(.system(size: 10)).foregroundStyle(tokens.muted).lineLimit(1)
+                                if isReconnecting {
+                                    Text("Reconnecting…").font(.system(size: 10, weight: .medium))
+                                        .foregroundStyle(.orange).lineLimit(1)
+                                } else {
+                                    Text(np.subtitle).font(.system(size: 10)).foregroundStyle(tokens.muted).lineLimit(1)
+                                }
                             }
                         }
                         Spacer(minLength: 0)

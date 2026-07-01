@@ -77,12 +77,15 @@ let testSurah = Surah(number: 67, nameAr: "الْمُلْك", translit: "Al-Mulk
     #expect(p.volume == 0.3)                       // play() re-applies the engine volume
 }
 
-@MainActor @Test func playerFailurePropagatesToFailedStatus() {
+// A finite on-demand item that fails surfaces `.failed` immediately — only LIVE streams get the
+// silent auto-reconnect (covered in LiveReconnectTests).
+@MainActor @Test func onDemandFailurePropagatesToFailedStatus() {
     let p = FakePlayer(); let engine = PlaybackEngine(player: p)
-    engine.playStation(Station(id: "x", name: "Egypt", region: "Cairo", kind: .icecast,
-                        url: URL(string: "https://e.com/dead")!, reciter: nil, hasVideo: false))
+    engine.play(.onDemand(reciterID: 1, reciterName: "R", moshafID: 1, surah: testSurah,
+                          url: URL(string: "https://e.com/dead.mp3")!))
     p.onFailure?("boom")
     #expect(engine.status == .failed("boom"))
+    #expect(engine.reconnectTaskForTesting == nil)   // no reconnect scheduled for non-live
 }
 
 @MainActor @Test func lateFailureWhenIdleIsIgnored() {
