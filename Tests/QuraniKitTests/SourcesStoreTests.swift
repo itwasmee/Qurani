@@ -11,7 +11,7 @@ import Foundation
 @MainActor @Test func loadsWorldRadioFromBundle() throws {
     let store = SourcesStore()
     try store.loadWorld()
-    #expect(store.world.count == 37)
+    #expect(store.world.count == 36)
     #expect(store.world.contains { $0.id == "sd_quran_digital" })   // Sudan
     #expect(store.world.contains { $0.id == "ae_abudhabi_quran" && $0.kind == .hls })
     // Every row is well-formed: non-empty id/name, http(s) url with a host.

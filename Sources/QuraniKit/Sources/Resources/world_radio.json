@@ -3,7 +3,6 @@
   {"id":"bd_radio_quraan","name":"Radio Quraan","region":"Bangladesh","kind":"icecast","url":"http://66.45.232.131:9994/stream","reciter":null,"hasVideo":false},
   {"id":"in_peace_quran","name":"Peace Radio Qur'an","region":"India","kind":"icecast","url":"http://stream.peaceradio.com:8000/quran/high","reciter":null,"hasVideo":false},
   {"id":"sd_quran_digital","name":"Sudan Holy Quran Radio","region":"Sudan","kind":"icecast","url":"https://stream.zeno.fm/mkkgqcchnfltv","reciter":null,"hasVideo":false},
-  {"id":"eg_alashraf_quran","name":"Al-Ashraf Quran","region":"Egypt","kind":"icecast","url":"https://s2.reliastream.com/proxy/alashraf?mp=/stream","reciter":null,"hasVideo":false},
   {"id":"dz_radio_coran","name":"Radio Algérie Coran","region":"Algeria","kind":"icecast","url":"https://radiocoran.ice.infomaniak.ch/coran.mp3","reciter":null,"hasVideo":false},
   {"id":"tn_radio_quran","name":"Radio Quran 97.7","region":"Tunisia","kind":"icecast","url":"https://live.radioquran.tn/live","reciter":null,"hasVideo":false},
   {"id":"tn_zitouna","name":"Zitouna FM","region":"Tunisia","kind":"icecast","url":"https://radio.radiotunisienne.tn/radiozaitouna","reciter":null,"hasVideo":false},
