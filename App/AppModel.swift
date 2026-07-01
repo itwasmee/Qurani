@@ -121,21 +121,46 @@ import QuraniKit
     /// Start finite playback of a single surah recitation. Builds the per-surah audio URL
     /// from the moshaf's server base, then hands a `.onDemand` item to the engine.
     func playOnDemand(reciter: Reciter, moshaf: Moshaf, surah: Surah) {
-        startOnDemand(reciterID: reciter.id, reciterName: reciter.name,
-                      moshafID: moshaf.id, serverBase: moshaf.serverBase, surah: surah)
+        startOnDemand(reciterID: reciter.id, reciterName: reciter.name, moshafID: moshaf.id,
+                      serverBase: moshaf.serverBase, surah: surah, order: moshaf.surahNumbers, record: true)
     }
 
-    /// Shared on-demand start used by `playOnDemand` and `playRecent` (the latter only has raw ids).
-    private func startOnDemand(reciterID: Int, reciterName: String, moshafID: Int, serverBase: URL, surah: Surah) {
+    /// Shared on-demand start used by `playOnDemand`, `playRecent`, and autoplay advances. `order` is
+    /// the moshaf's ordered surah list (drives autoplay); `record` adds a recents entry (true for a
+    /// user-initiated play, false for an autoplay advance so the history strip isn't flooded).
+    private func startOnDemand(reciterID: Int, reciterName: String, moshafID: Int, serverBase: URL,
+                               surah: Surah, order: [Int], record: Bool) {
         if isMixing { stopMix() }   // an explicit single play ends any active random-mix session
         releaseLocalScope()         // switching to a streamed source — drop any held local file scope
         let url = CatalogService.audioURL(serverBase: serverBase, surah: surah.number)
         engine.play(.onDemand(reciterID: reciterID, reciterName: reciterName,
                               moshafID: moshafID, surah: surah, url: url))
-        recents.record(RecentItem(sourceID: "ondemand:\(reciterID):\(moshafID):\(surah.number)",
-                                  kind: .onDemand, title: surah.translit, subtitle: reciterName,
-                                  reciterID: reciterID, reciterName: reciterName, moshafID: moshafID,
-                                  serverBase: serverBase.absoluteString, surahNumber: surah.number))
+        onDemandContext = OnDemandContext(reciterID: reciterID, reciterName: reciterName,
+                                          moshafID: moshafID, serverBase: serverBase,
+                                          order: order, current: surah.number)
+        engine.onFinish = { [weak self] in self?.advanceOnDemand() }
+        if record {
+            recents.record(RecentItem(sourceID: "ondemand:\(reciterID):\(moshafID):\(surah.number)",
+                                      kind: .onDemand, title: surah.translit, subtitle: reciterName,
+                                      reciterID: reciterID, reciterName: reciterName, moshafID: moshafID,
+                                      serverBase: serverBase.absoluteString, surahNumber: surah.number))
+        }
+    }
+
+    /// Invoked by `engine.onFinish` when an on-demand surah ends: if autoplay is on, play the next
+    /// surah the moshaf offers (skipping any number missing from the loaded `surahs`); stop at the end.
+    private func advanceOnDemand() {
+        guard settings.autoplayEnabled, let ctx = onDemandContext else { return }
+        var after = ctx.current
+        while let next = Autoplay.nextSurah(in: ctx.order, after: after) {
+            if let surah = surahs.first(where: { $0.number == next }) {
+                startOnDemand(reciterID: ctx.reciterID, reciterName: ctx.reciterName, moshafID: ctx.moshafID,
+                              serverBase: ctx.serverBase, surah: surah, order: ctx.order, record: false)
+                return
+            }
+            after = next   // number not in the loaded surahs — keep scanning forward
+        }
+        clearOnDemandAutoplay()   // no resolvable next surah — stop
     }
 
     /// Play a library-imported local file. Resolving the track's security-scoped bookmark begins
@@ -145,6 +170,7 @@ import QuraniKit
     func playLocal(_ track: LocalTrack) {
         guard let url = library.resolveURL(track) else { return }
         if isMixing { stopMix() }   // an explicit single play ends any active random-mix session
+        clearOnDemandAutoplay()     // a finished local file must not resume on-demand autoplay
         retainLocalScope(url)       // release the prior local scope; keep at most one outstanding
         engine.play(.localTrack(track: track, url: url))
         recents.record(RecentItem(sourceID: "local:\(track.id.uuidString)", kind: .local,
@@ -158,6 +184,7 @@ import QuraniKit
     /// "up next" hint under a LIVE item, and a re-roll could hijack audio back off the station).
     func playStation(_ s: Station) {
         if isMixing { stopMix() }
+        clearOnDemandAutoplay()   // live never finishes, but drop any stale on-demand hook
         releaseLocalScope()   // switching to live — drop any held local file scope
         engine.playStation(s)
         recents.record(RecentItem(sourceID: "live:\(s.id)", kind: .live, title: s.name,
@@ -178,7 +205,12 @@ import QuraniKit
                   let base = item.serverBase, let baseURL = URL(string: base), let n = item.surahNumber,
                   let surah = surahs.first(where: { $0.number == n })
             else { return }
-            startOnDemand(reciterID: rID, reciterName: rName, moshafID: mID, serverBase: baseURL, surah: surah)
+            // Recents store only a single surah; recover the moshaf's full order from the catalog so a
+            // replay can still autoplay. No match (catalog unloaded / reciter gone) → single-surah order.
+            let order = catalog.reciters.first { $0.id == rID }?
+                .moshafs.first { $0.id == mID }?.surahNumbers ?? [n]
+            startOnDemand(reciterID: rID, reciterName: rName, moshafID: mID, serverBase: baseURL,
+                          surah: surah, order: order, record: true)
         case .local:
             guard let tid = item.trackID,
                   let track = library.tracks.first(where: { $0.id.uuidString == tid })
@@ -197,6 +229,24 @@ import QuraniKit
 
     /// The security-scoped local file URL currently held open (≤1 outstanding), or nil.
     private var scopedLocalURL: URL?
+
+    // MARK: - On-demand autoplay
+    //
+    // While an on-demand surah plays, we retain the reciter/moshaf and that moshaf's ordered surah
+    // list so a natural finish can advance to the next surah (gated by `settings.autoplayEnabled`).
+    // Cleared whenever a non-on-demand source takes over, so Library/Live/Mix never trigger it.
+    private struct OnDemandContext {
+        let reciterID: Int; let reciterName: String; let moshafID: Int
+        let serverBase: URL; let order: [Int]; let current: Int
+    }
+    private var onDemandContext: OnDemandContext?
+
+    /// Drop the on-demand autoplay context and detach the finish hook. Called when Library/Live take
+    /// over (Mix reassigns `onFinish` to `advanceMix` itself).
+    private func clearOnDemandAutoplay() {
+        onDemandContext = nil
+        engine.onFinish = nil
+    }
 
     /// Retain `url` as the held local scope, releasing the previous one first. (Resolving the same
     /// file twice begins access twice; stopping the prior reference rebalances to a single hold.)
@@ -298,6 +348,7 @@ import QuraniKit
         guard !mixQueue.isEmpty else { mixNoCoverage = true; return }
         mixNoCoverage = false
         isMixing = true
+        onDemandContext = nil   // mix owns onFinish now
         engine.onFinish = { [weak self] in self?.advanceMix() }
         playMixIndex(0)
     }
@@ -372,6 +423,7 @@ import QuraniKit
     func stopMix() {
         isMixing = false
         engine.onFinish = nil
+        onDemandContext = nil
         engine.stop()
         mixQueue = []
         releaseLocalScope()   // drop any local file scope the mix was holding
