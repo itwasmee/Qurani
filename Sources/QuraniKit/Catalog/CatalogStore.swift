@@ -11,14 +11,14 @@ import Foundation
     /// Decode the fetched payload into `reciters`. On any error (offline, malformed feed)
     /// the catalog is left empty rather than surfacing a throw to the UI.
     public func load(_ fetch: () async throws -> Data) async {
-        do { reciters = try CatalogService.decodeReciters(try await fetch()) }
+        do { reciters = Self.stripMuallim(try CatalogService.decodeReciters(try await fetch())) }
         catch { reciters = [] }
     }
 
     #if DEBUG
     /// Inject already-decoded reciters directly. For unit tests and the `--snapshot` render path,
     /// which need deterministic content without a network. DEBUG-only — not shipped in release.
-    public func seed(reciters: [Reciter]) { self.reciters = reciters }
+    public func seed(reciters: [Reciter]) { self.reciters = Self.stripMuallim(reciters) }
     #endif
 
     /// Case-insensitive filter over the cached reciters.
@@ -52,8 +52,24 @@ import Foundation
         "Hafs": ["Hafs"],
         "Warsh": ["Warsh"],
         "Mujawwad": ["Mojawwad", "Mujawwad"],
-        "Muallim": ["Mo'lim", "Mo'allim", "Muallim"],
     ]
+
+    /// mp3quran "Muallim" (teaching) recitations are hidden app-wide — slow, repeat-heavy
+    /// learning recordings, not the murattal/mujawwad sets Explore is for. Matched on the
+    /// transliterations the live feed uses ("Mo'lim"/"Mo'allim"/"Muallim").
+    static let muallimSpellings = ["Mo'lim", "Mo'allim", "Muallim"]
+
+    /// Drops every Muallim moshaf from each reciter, then drops any reciter left with no moshaf.
+    /// Applied to both the live feed (`load`) and seeded content (`seed`), so no consumer — the
+    /// Explore list, the riwaya filter, or the detail moshaf picker — ever sees a Muallim version.
+    static func stripMuallim(_ reciters: [Reciter]) -> [Reciter] {
+        reciters.compactMap { reciter in
+            let kept = reciter.moshafs.filter { moshaf in
+                !muallimSpellings.contains { moshaf.name.range(of: $0, options: .caseInsensitive) != nil }
+            }
+            return kept.isEmpty ? nil : Reciter(id: reciter.id, name: reciter.name, moshafs: kept)
+        }
+    }
 
     /// Fetches the live reciter catalog (English names). 15s timeout so a slow/dead host
     /// doesn't hang the Explore view.

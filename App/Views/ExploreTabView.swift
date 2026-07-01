@@ -23,7 +23,7 @@ struct ExploreTabView: View {
     @State private var selectedReciter: Reciter?
 
     /// Filter labels → the token passed to `catalog.filtered(riwaya:)`. "All" maps to nil.
-    private let riwayat = ["Hafs", "Warsh", "Mujawwad", "Muallim"]
+    private let riwayat = ["Hafs", "Warsh", "Mujawwad"]
 
     private var results: [Reciter] { catalog.filtered(search: search, riwaya: riwaya) }
 

@@ -174,7 +174,7 @@ import QuraniKit
             Reciter(id: 2, name: "Abdul Basit Abdul Samad",
                     moshafs: [moshaf(3, "Murattal", [1, 2, 112]),
                               moshaf(4, "Mujawwad", [1, 55, 112])]),
-            Reciter(id: 3, name: "Mahmoud Khalil Al-Husary", moshafs: [moshaf(5, "Muallim", [1, 2, 36])]),
+            Reciter(id: 3, name: "Mahmoud Khalil Al-Husary", moshafs: [moshaf(5, "Mujawwad", [1, 2, 36])]),
             Reciter(id: 4, name: "Yasser Al-Dossari", moshafs: [moshaf(6, "Hafs", [1, 2, 67])]),
             Reciter(id: 5, name: "Saad Al-Ghamdi", moshafs: [moshaf(7, "Hafs", [1, 55, 112])]),
         ]
