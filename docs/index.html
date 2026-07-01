@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Qurani — the Qur'an, kept in your Mac menubar</title>
+<meta name="description" content="A minimal, illuminated macOS menubar app for the Qur'an: live radio from the Haramain, 200+ reciters, your own library, and a mix that gives every surah a different qari. Native SwiftUI, free sources, open source.">
+<meta name="theme-color" content="#0a0e16">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Qurani — the Qur'an, kept in your menubar">
+<meta property="og:description" content="Live radio, 200+ reciters, a personal library, and a random-qari mix. Native macOS, minimal, free.">
+<meta property="og:image" content="qurani.png">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0e16'/%3E%3Cg fill='%23d9b45c'%3E%3Crect x='6' y='13' width='3.4' height='6' rx='1.7'/%3E%3Crect x='11.5' y='9' width='3.4' height='14' rx='1.7'/%3E%3Crect x='17' y='6' width='3.4' height='20' rx='1.7'/%3E%3Crect x='22.5' y='11' width='3.4' height='10' rx='1.7'/%3E%3C/g%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Amiri+Quran&family=Hanken+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<script>document.documentElement.classList.add('js')</script>
+<style>
+  :root{
+    --ink:#0a0e16; --ink-2:#0f1420; --raise:#141a28; --raise-2:#19202f;
+    --gold:#d9b45c; --gold-bright:#f0d089; --gold-line:rgba(217,180,92,.34); --gold-faint:rgba(217,180,92,.15);
+    --lapis:#5c8fd6; --lapis-deep:#345f9e;
+    --live:#3fd6a4;
+    --txt:#ece6d6; --head:#f6f0e2; --mut:#938d7d; --line:rgba(236,230,214,.09);
+    --ui:'Hanken Grotesk',-apple-system,system-ui,sans-serif;
+    --q:'Amiri Quran',serif; --mono:'JetBrains Mono',ui-monospace,monospace;
+    --maxw:1060px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--ink); color:var(--txt); font-family:var(--ui); line-height:1.55;
+    -webkit-font-smoothing:antialiased; overflow-x:hidden; position:relative;
+  }
+  /* girih (8-point khatam star) texture + illumination glow — the manuscript's material */
+  body::before{
+    content:""; position:fixed; inset:0; z-index:-2; pointer-events:none; opacity:.05;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='44' height='44' viewBox='0 0 40 40'%3E%3Cpath d='M20 2 22.9 13.1 32.7 7.3 26.9 17.1 38 20 26.9 22.9 32.7 32.7 22.9 26.9 20 38 17.1 26.9 7.3 32.7 13.1 22.9 2 20 13.1 17.1 7.3 7.3 17.1 13.1Z' fill='none' stroke='%23d9b45c' stroke-width='.7'/%3E%3C/svg%3E");
+  }
+  body::after{
+    content:""; position:fixed; inset:0; z-index:-1; pointer-events:none;
+    background:
+      radial-gradient(70vw 55vh at 50% -12%, rgba(217,180,92,.14), transparent 62%),
+      radial-gradient(60vw 50vh at 90% 20%, rgba(92,143,214,.08), transparent 58%),
+      linear-gradient(var(--ink), #070a11 70%);
+  }
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:var(--maxw); margin:0 auto; padding:0 24px}
+  .ar{font-family:var(--q); direction:rtl}
+
+  .eyebrow{font-family:var(--mono); font-weight:700; font-size:.68rem; letter-spacing:.28em; text-transform:uppercase; color:var(--gold)}
+
+  /* equalizer mark — recoloured to gold leaf */
+  .eq{display:inline-flex; align-items:flex-end; gap:2.6px; height:15px}
+  .eq i{width:3px; background:var(--gold); border-radius:2px; height:40%}
+  .eq i:nth-child(1){animation:bounce 1.15s ease-in-out -.2s infinite}
+  .eq i:nth-child(2){animation:bounce 1.15s ease-in-out -.55s infinite}
+  .eq i:nth-child(3){animation:bounce 1.15s ease-in-out -.9s infinite}
+  .eq i:nth-child(4){animation:bounce 1.15s ease-in-out -.35s infinite}
+  @keyframes bounce{0%,100%{height:28%}50%{height:100%}}
+
+  /* nav */
+  nav{position:sticky; top:0; z-index:60; backdrop-filter:blur(16px) saturate(1.2); -webkit-backdrop-filter:blur(16px) saturate(1.2); background:rgba(10,14,22,.6); border-bottom:1px solid var(--gold-faint)}
+  .nav-in{display:flex; align-items:center; gap:14px; height:60px}
+  .brand{display:flex; align-items:center; gap:10px; font-weight:800; letter-spacing:.02em; font-size:1.02rem; color:var(--head)}
+  .brand .eq{height:13px}
+  .nav-sp{flex:1}
+  .nav-link{color:var(--mut); font-weight:600; font-size:.9rem; padding:8px 10px; border-radius:9px; transition:color .2s}
+  .nav-link:hover{color:var(--lapis)}
+  .btn{display:inline-flex; align-items:center; gap:8px; font-family:var(--ui); font-weight:700; font-size:.9rem; border-radius:11px; padding:9px 17px; border:1px solid transparent; cursor:pointer; transition:transform .15s, box-shadow .2s, background .2s, color .2s, border-color .2s}
+  .btn-gold{background:linear-gradient(180deg,var(--gold-bright),var(--gold)); color:#3a2c07; box-shadow:0 6px 22px -8px rgba(217,180,92,.6)}
+  .btn-gold:hover{transform:translateY(-1px); box-shadow:0 10px 28px -8px rgba(217,180,92,.7)}
+  .btn-line{border-color:var(--gold-line); color:var(--txt)}
+  .btn-line:hover{border-color:var(--gold); color:var(--gold-bright)}
+
+  /* hero — the ʿunwān / illuminated frontispiece */
+  .hero{padding:66px 0 40px}
+  .unwan{position:relative; text-align:center; padding:clamp(38px,6vw,64px) clamp(20px,4vw,52px); border:1px solid var(--gold-line); border-radius:22px; background:radial-gradient(120% 140% at 50% 0%, rgba(217,180,92,.05), transparent 60%)}
+  .unwan::before{content:""; position:absolute; inset:7px; border:1px solid var(--gold-faint); border-radius:16px; pointer-events:none}
+  .cnr{position:absolute; width:30px; height:30px; color:var(--gold); opacity:.9}
+  .cnr.tl{top:-15px; left:-15px} .cnr.tr{top:-15px; right:-15px} .cnr.bl{bottom:-15px; left:-15px} .cnr.br{bottom:-15px; right:-15px}
+  .frontispiece{display:flex; align-items:center; justify-content:center; gap:.3em; margin:.5em 0 .1em; color:var(--gold); font-family:var(--q); font-size:clamp(3.2rem,10vw,6.8rem); line-height:1; text-shadow:0 4px 40px rgba(217,180,92,.35)}
+  .frontispiece .paren{color:var(--gold-line); font-size:.82em; transform:translateY(.02em)}
+  h1{color:var(--head); font-weight:800; letter-spacing:-.025em; line-height:1.05; font-size:clamp(1.9rem,4.2vw,3.1rem); margin:.55em auto .5em; max-width:18ch}
+  h1 em{font-style:normal; color:var(--gold-bright)}
+  .lead{color:var(--mut); font-size:1.1rem; max-width:52ch; margin:0 auto 26px}
+  .lead b{color:var(--txt); font-weight:600}
+
+  .cmd{display:flex; align-items:center; gap:12px; font-family:var(--mono); font-size:.83rem; background:var(--ink-2); border:1px solid var(--gold-faint); border-radius:12px; padding:12px 14px; color:#e7dcbf; max-width:540px; margin:0 auto 20px; text-align:left}
+  .cmd .dollar{color:var(--gold); font-weight:700}
+  .cmd code{flex:1; overflow-x:auto; white-space:nowrap; scrollbar-width:none}
+  .cmd code::-webkit-scrollbar{display:none}
+  .copy{background:transparent; border:1px solid var(--gold-line); color:var(--gold); border-radius:8px; padding:6px 11px; font-family:var(--mono); font-size:.7rem; font-weight:700; cursor:pointer; transition:background .2s,color .2s; flex:none}
+  .copy:hover,.copy.done{background:var(--gold); color:#3a2c07}
+  .cta{display:flex; align-items:center; justify-content:center; gap:14px; flex-wrap:wrap}
+
+  /* screenshot mounted like a plate on the page */
+  .plate-wrap{margin:52px auto 0; text-align:center}
+  .plate{display:inline-block; max-width:100%; padding:14px; border-radius:26px; background:linear-gradient(160deg, rgba(217,180,92,.12), rgba(236,230,214,.02)); border:1px solid var(--gold-faint); box-shadow:0 50px 100px -34px rgba(0,0,0,.85)}
+  .plate img{display:block; width:min(330px,78vw); border-radius:15px}
+  .cap{margin-top:16px; font-family:var(--mono); font-size:.62rem; letter-spacing:.2em; text-transform:uppercase; color:var(--mut)}
+
+  /* rosette section divider */
+  .divider{display:flex; align-items:center; gap:18px; padding:30px 0 6px}
+  .divider .rule{flex:1; height:1px; background:linear-gradient(90deg,transparent,var(--gold-line),transparent)}
+  .divider svg{width:26px; height:26px; color:var(--gold); flex:none}
+
+  .section{padding:24px 0 34px}
+  .section-head{max-width:60ch; margin-bottom:30px}
+  .section-head.mid{text-align:center; margin-left:auto; margin-right:auto}
+  .section-head h2{color:var(--head); font-weight:800; letter-spacing:-.02em; font-size:clamp(1.7rem,3.4vw,2.4rem); margin:.42em 0 .28em}
+  .section-head p{color:var(--mut); font-size:1.04rem}
+
+  /* fihris — mushaf-index feature list */
+  .fihris{border-top:1px solid var(--gold-faint)}
+  .entry{display:grid; grid-template-columns:56px 1fr auto; gap:22px; align-items:center; padding:24px 6px; border-bottom:1px solid var(--gold-faint); transition:background .25s}
+  .entry:hover{background:rgba(217,180,92,.035)}
+  .entry .mark{display:grid; place-items:center}
+  .entry .mark svg{width:40px; height:40px; color:var(--gold)}
+  .entry .body h3{color:var(--head); font-weight:700; font-size:1.22rem; letter-spacing:-.01em; display:flex; align-items:center; gap:12px; flex-wrap:wrap}
+  .entry .body h3 .kw{font-family:var(--q); font-size:1.35rem; color:var(--gold); direction:rtl; font-weight:400}
+  .entry .body p{color:var(--mut); font-size:.98rem; margin-top:5px; max-width:60ch}
+  .entry .idx{font-family:var(--q); font-size:1.5rem; color:var(--gold-line); direction:rtl}
+  .live-dot{display:inline-flex; align-items:center; gap:6px; font-family:var(--mono); font-size:.56rem; letter-spacing:.16em; color:var(--live); text-transform:uppercase}
+  .live-dot::before{content:""; width:6px; height:6px; border-radius:50%; background:var(--live); box-shadow:0 0 0 0 rgba(63,214,164,.6); animation:pulse 2s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(63,214,164,.55)}70%{box-shadow:0 0 0 7px rgba(63,214,164,0)}100%{box-shadow:0 0 0 0 rgba(63,214,164,0)}}
+
+  /* signature: the Mix re-roll */
+  .mix{display:grid; grid-template-columns:1fr 1.05fr; gap:46px; align-items:center}
+  .mix-copy .big{font-family:var(--q); direction:rtl; color:var(--head); font-size:clamp(1.9rem,4vw,2.7rem); line-height:1.35; margin-bottom:16px}
+  .mix-copy p{color:var(--mut); font-size:1.05rem; margin-bottom:10px}
+  .mix-copy p b{color:var(--txt); font-weight:600}
+  .queue{background:linear-gradient(180deg,var(--raise),var(--ink-2)); border:1px solid var(--gold-faint); border-radius:20px; padding:16px; box-shadow:0 40px 90px -40px rgba(0,0,0,.8)}
+  .q-head{display:flex; align-items:center; justify-content:space-between; padding:6px 8px 14px}
+  .q-head .lbl{font-family:var(--mono); font-size:.64rem; letter-spacing:.22em; color:var(--mut); text-transform:uppercase}
+  .reroll{display:inline-flex; align-items:center; gap:8px; background:rgba(217,180,92,.12); border:1px solid var(--gold-line); color:var(--gold); border-radius:10px; padding:7px 13px; font-family:var(--ui); font-weight:700; font-size:.76rem; cursor:pointer; transition:background .2s,transform .1s}
+  .reroll:hover{background:rgba(217,180,92,.2)}
+  .reroll:active{transform:scale(.96)}
+  .reroll svg{width:15px; height:15px; color:var(--gold); transition:transform .55s cubic-bezier(.3,1.4,.5,1)}
+  .reroll.spin svg{transform:rotate(180deg)}
+  .row{display:flex; align-items:center; gap:14px; padding:12px 10px; border-radius:14px}
+  .row+.row{margin-top:2px; border-top:1px solid var(--line)}
+  .med{width:38px; height:38px; flex:none; border-radius:50%; border:1.5px solid var(--gold-line); display:grid; place-items:center; font-family:var(--q); font-weight:400; font-size:1.15rem; color:var(--gold); direction:rtl; line-height:1}
+  .names{flex:1; min-width:0}
+  .names .sn{font-family:var(--q); font-size:1.4rem; line-height:1.4; direction:rtl; color:var(--txt)}
+  .names .qari{font-size:.82rem; color:var(--lapis); font-weight:600; transition:opacity .3s}
+  .names .qari.fade{opacity:0}
+  .src{font-family:var(--mono); font-size:.55rem; letter-spacing:.12em; color:var(--mut); border:1px solid var(--line); border-radius:6px; padding:3px 6px; text-transform:uppercase; flex:none}
+
+  /* install */
+  .steps{display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-bottom:24px}
+  .step{background:var(--ink-2); border:1px solid var(--gold-faint); border-radius:16px; padding:24px}
+  .step .num{width:34px; height:34px; border-radius:50%; border:1px solid var(--gold-line); display:grid; place-items:center; font-family:var(--q); font-size:1.2rem; color:var(--gold); margin-bottom:14px}
+  .step h4{color:var(--head); font-weight:700; margin-bottom:6px; font-size:1.05rem}
+  .step p{color:var(--mut); font-size:.92rem}
+  .step code, .req code{font-family:var(--mono); color:#e7dcbf; background:var(--ink); padding:2px 6px; border-radius:6px; font-size:.84em}
+  .req{color:var(--mut); font-size:.92rem} .req b{color:var(--txt)}
+
+  footer{margin-top:40px; border-top:1px solid var(--gold-faint); padding:44px 0 60px}
+  .foot-in{display:flex; gap:26px; flex-wrap:wrap; align-items:flex-start; justify-content:space-between}
+  .foot-in p{color:var(--mut); font-size:.87rem; max-width:54ch; margin-top:10px}
+  .foot-in a{color:var(--gold)}
+  .foot-brand{display:flex; align-items:center; gap:9px; font-weight:800; color:var(--head)}
+
+  .reveal{transition:opacity .7s ease, transform .7s ease}
+  html.js .reveal:not(.in){opacity:0; transform:translateY(20px)}   /* hide only un-revealed, and only when JS can reveal */
+  .reveal.in{opacity:1; transform:none}
+  :focus-visible{outline:2px solid var(--lapis); outline-offset:3px; border-radius:6px}
+
+  @media (max-width:820px){
+    .mix{grid-template-columns:1fr; gap:34px}
+    .steps{grid-template-columns:1fr}
+    .entry{grid-template-columns:44px 1fr; gap:16px}
+    .entry .idx{display:none}
+    .nav-link.hide-sm{display:none}
+  }
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}
+    .eq i{animation:none; height:68%}
+    .live-dot::before{animation:none}
+    .reveal{opacity:1; transform:none; transition:none}
+  }
+</style>
+</head>
+<body id="top">
+
+<!-- reusable rosette (8-point khatam star in a ring) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="rose" viewBox="0 0 40 40">
+  <circle cx="20" cy="20" r="18.2" fill="none" stroke="currentColor" stroke-width="1"/>
+  <path d="M20 4 22.4 15.6 31.5 8.5 24.4 17.6 36 20 24.4 22.4 31.5 31.5 22.4 24.4 20 36 17.6 24.4 8.5 31.5 15.6 22.4 4 20 15.6 17.6 8.5 8.5 17.6 15.6Z" fill="none" stroke="currentColor" stroke-width="1"/>
+  <circle cx="20" cy="20" r="2.1" fill="currentColor"/>
+</symbol></svg>
+
+<nav>
+  <div class="wrap nav-in">
+    <a class="brand" href="#top"><span class="eq"><i></i><i></i><i></i><i></i></span> Qurani</a>
+    <span class="nav-sp"></span>
+    <a class="nav-link hide-sm" href="#panel">The panel</a>
+    <a class="nav-link hide-sm" href="#mix">Mix</a>
+    <a class="nav-link" href="https://github.com/itwasmee/Qurani" target="_blank" rel="noopener">GitHub&nbsp;↗</a>
+    <a class="btn btn-gold" href="#install">Install</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="unwan reveal in">
+      <svg class="cnr tl"><use href="#rose"/></svg><svg class="cnr tr"><use href="#rose"/></svg>
+      <svg class="cnr bl"><use href="#rose"/></svg><svg class="cnr br"><use href="#rose"/></svg>
+      <span class="eyebrow">A macOS menubar app · free &amp; open source</span>
+      <div class="frontispiece"><span class="paren ar">﴾</span><span class="ar" lang="ar">قُرْآنِي</span><span class="paren ar">﴿</span></div>
+      <h1>The Qur'an, kept in your <em>menubar</em>.</h1>
+      <p class="lead">Live radio from the Haramain, a <b>200+ reciter</b> catalogue you can stream at once, your own local library, and a mix that hands <b>every surah to a different qari</b>. Native, quiet, free.</p>
+      <div class="cmd">
+        <span class="dollar">$</span>
+        <code id="cmd">git clone https://github.com/itwasmee/Qurani.git &amp;&amp; cd Qurani &amp;&amp; ./install.sh</code>
+        <button class="copy" id="copy" aria-label="Copy install command">Copy</button>
+      </div>
+      <div class="cta">
+        <a class="btn btn-gold" href="#install">Install it</a>
+        <a class="btn btn-line" href="https://github.com/itwasmee/Qurani" target="_blank" rel="noopener">View source ↗</a>
+      </div>
+    </div>
+
+    <figure class="plate-wrap reveal">
+      <span class="plate"><img src="qurani.png" width="330" alt="Qurani's menubar panel on the Explore tab: reciter Mohammad Al-Tablaway, the Mojawwad moshaf, and surahs set in Arabic calligraphy above a now-playing bar." loading="lazy"></span>
+      <figcaption class="cap">Explore · streaming a surah</figcaption>
+    </figure>
+  </div>
+</header>
+
+<section class="section" id="panel">
+  <div class="wrap">
+    <div class="divider"><span class="rule"></span><svg><use href="#rose"/></svg><span class="rule"></span></div>
+    <div class="section-head mid reveal">
+      <span class="eyebrow">The panel · فِهْرِس</span>
+      <h2>Four ways to listen.</h2>
+      <p>The tabs the app opens with — each does one thing, and stays out of the way.</p>
+    </div>
+    <div class="fihris">
+      <div class="entry reveal">
+        <div class="mark"><svg><use href="#rose"/></svg></div>
+        <div class="body">
+          <h3>Live Radio <span class="kw">بَثّ</span> <span class="live-dot">On air</span></h3>
+          <p>Makkah, Madinah, Egypt's Quran Al-Kareem, and 174 always-on per-reciter stations. Dropped streams reconnect on their own; the surah shows only when the broadcast actually names it.</p>
+        </div>
+        <div class="idx">١</div>
+      </div>
+      <div class="entry reveal">
+        <div class="mark"><svg><use href="#rose"/></svg></div>
+        <div class="body">
+          <h3>Explore <span class="kw">قُرَّاء</span></h3>
+          <p>Browse 200+ reciters, filter by riwaya, pick a moshaf, and stream any of the 114 surahs instantly. Favourite a qari or add them to your mix pool.</p>
+        </div>
+        <div class="idx">٢</div>
+      </div>
+      <div class="entry reveal">
+        <div class="mark"><svg><use href="#rose"/></svg></div>
+        <div class="body">
+          <h3>Library <span class="kw">مَكْتَبَة</span></h3>
+          <p>Your own recordings, grouped reciter → surah. Drag files in or drop them in a watched folder; a smart tagger names them and flags whatever it's unsure of.</p>
+        </div>
+        <div class="idx">٣</div>
+      </div>
+      <div class="entry reveal">
+        <div class="mark"><svg><use href="#rose"/></svg></div>
+        <div class="body">
+          <h3>Mix <span class="kw">عَشْوَائِيّ</span></h3>
+          <p>The signature: pick a pool of qaris and a range, and each surah lands on a different voice — only reciters who actually recorded it. Re-roll any time, save as a preset.</p>
+        </div>
+        <div class="idx">٤</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="mix">
+  <div class="wrap">
+    <div class="divider"><span class="rule"></span><svg><use href="#rose"/></svg><span class="rule"></span></div>
+    <div class="mix">
+      <div class="mix-copy reveal">
+        <span class="eyebrow">The signature</span>
+        <div class="big" dir="rtl" lang="ar">لِكُلِّ سُورَةٍ قَارِئ</div>
+        <p style="color:var(--head);font-size:1.25rem;font-weight:700;margin-bottom:14px">Every surah, a different qari.</p>
+        <p>Build a pool from your library and favourite reciters. Qurani gives each surah a <b>random voice</b> from it — never one who didn't record that surah.</p>
+        <p>Re-roll for a whole new recitation.</p>
+      </div>
+      <div class="queue reveal" id="queue">
+        <div class="q-head">
+          <span class="lbl">Up next · random</span>
+          <button class="reroll" id="reroll"><svg><use href="#rose"/></svg> Re-roll</button>
+        </div>
+        <div class="row"><div class="med">١</div><div class="names"><div class="sn" dir="rtl">الْفَاتِحَة</div><div class="qari">Mishary Alafasy</div></div><span class="src">Stream</span></div>
+        <div class="row"><div class="med">٥٥</div><div class="names"><div class="sn" dir="rtl">الرَّحْمَٰن</div><div class="qari">Abdul Basit Abdul Samad</div></div><span class="src">Library</span></div>
+        <div class="row"><div class="med">٦٧</div><div class="names"><div class="sn" dir="rtl">الْمُلْك</div><div class="qari">Maher Al Muaiqly</div></div><span class="src">Stream</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="install">
+  <div class="wrap">
+    <div class="divider"><span class="rule"></span><svg><use href="#rose"/></svg><span class="rule"></span></div>
+    <div class="section-head mid reveal">
+      <span class="eyebrow">Install</span>
+      <h2>Build it, and it's in your menubar.</h2>
+      <p>One command clones, builds a release, installs to <code>/Applications</code>, and relaunches.</p>
+    </div>
+    <div class="steps">
+      <div class="step reveal"><div class="num ar">١</div><h4>Clone</h4><p><code>git clone …/Qurani.git</code></p></div>
+      <div class="step reveal"><div class="num ar">٢</div><h4>Install</h4><p>Run <code>./install.sh</code> in the repo — it builds, quits any running copy, and installs the app.</p></div>
+      <div class="step reveal"><div class="num ar">٣</div><h4>Listen</h4><p>Click the equalizer in your menubar. Update later with <code>git pull &amp;&amp; ./install.sh</code>.</p></div>
+    </div>
+    <p class="req reveal"><b>Requirements:</b> macOS 26 (Tahoe) or newer · Xcode 26+ · Swift 6. Optional <code>xcodegen</code> regenerates the project from <code>project.yml</code>.</p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot-in">
+    <div>
+      <div class="foot-brand"><span class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span> Qurani</div>
+      <p>Free, legal sources only — reciters and stations from mp3quran / qurango, vowelized names from Tanzil / QUL, fonts Amiri Quran &amp; Noto Naskh Arabic (OFL). Full attribution in NOTICE on GitHub.</p>
+    </div>
+    <a href="https://github.com/itwasmee/Qurani" target="_blank" rel="noopener">github.com/itwasmee/Qurani ↗</a>
+  </div>
+</footer>
+
+<script>
+  (function(){ // copy install command
+    var btn=document.getElementById('copy'), cmd=document.getElementById('cmd');
+    btn.addEventListener('click', function(){
+      navigator.clipboard.writeText(cmd.textContent.trim()).then(function(){
+        btn.textContent='Copied'; btn.classList.add('done');
+        setTimeout(function(){ btn.textContent='Copy'; btn.classList.remove('done'); }, 1600);
+      });
+    });
+  })();
+
+  (function(){ // Mix re-roll — each surah gets a random qari from a pool
+    var pool=[['Mishary Alafasy','Stream'],['Abdul Basit Abdul Samad','Library'],['Maher Al Muaiqly','Stream'],
+      ['Mahmoud Al-Husary','Library'],['Saad Al-Ghamdi','Stream'],['Yasser Al-Dosari','Stream'],
+      ['Saud Al-Shuraim','Stream'],['Abdul Rahman Al-Sudais','Library']];
+    var rows=[].slice.call(document.querySelectorAll('#queue .row'));
+    var reduce=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    function pick(){ return pool[Math.floor(Math.random()*pool.length)]; }
+    function roll(){ rows.forEach(function(r){
+      var q=r.querySelector('.qari'), s=r.querySelector('.src'), p=pick();
+      q.classList.add('fade');
+      setTimeout(function(){ q.textContent=p[0]; s.textContent=p[1]; q.classList.remove('fade'); }, 250);
+    }); }
+    var rr=document.getElementById('reroll');
+    rr.addEventListener('click', function(){ rr.classList.add('spin'); roll(); setTimeout(function(){rr.classList.remove('spin');},560); });
+    if(!reduce) setInterval(roll, 3400);
+  })();
+
+  (function(){ // scroll reveal
+    var els=[].slice.call(document.querySelectorAll('.reveal'));
+    if(/all/.test(location.search) || !('IntersectionObserver' in window)){ els.forEach(function(e){e.classList.add('in');}); return; }
+    var io=new IntersectionObserver(function(en){ en.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target); } }); }, {threshold:.14});
+    els.forEach(function(e){ io.observe(e); });
+  })();
+</script>
+</body>
+</html>
