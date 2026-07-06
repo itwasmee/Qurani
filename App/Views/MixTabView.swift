@@ -347,6 +347,7 @@ struct MixTabView: View {
             }
             .buttonStyle(.plain)
             .help("Back to mix setup")
+            .accessibilityLabel("Back to mix setup")
             VStack(alignment: .leading, spacing: 1) {
                 Text("Random Mix · \(orderLabel)")
                     .font(.system(size: 13, weight: .bold)).foregroundStyle(tokens.text)
