@@ -3,6 +3,15 @@
 <plist version="1.0"><dict>
   <key>LSUIElement</key><true/>
   <key>CFBundleName</key><string>Qurani</string>
+  <!-- Standard identity keys, expanded from build settings at build time. Without these the
+       built app had NO bundle id or version — Bundle.main.bundleIdentifier was nil, which the
+       in-app updater needs for both the version comparison and validating a downloaded build. -->
+  <key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+  <key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
+  <key>CFBundlePackageType</key><string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+  <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
+  <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
   <key>ATSApplicationFontsPath</key><string>.</string>
   <key>NSAppTransportSecurity</key>
   <dict>

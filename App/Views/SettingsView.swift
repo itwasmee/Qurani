@@ -22,6 +22,10 @@ import QuraniKit
 struct SettingsView: View {
     @ObservedObject var settings: SettingsStore
     @ObservedObject var importer: LibraryImporter
+    /// Release check + installer (both owned by `AppModel`): the UPDATES row renders their live
+    /// states — the installer's phase first (it only runs after a found update), then the checker's.
+    @ObservedObject var updates: UpdateChecker
+    @ObservedObject var updater: SelfUpdater
     let tokens: Tokens
     let onClose: () -> Void
 
@@ -43,6 +47,9 @@ struct SettingsView: View {
                     autoImportRow
                     sectionLabel("GENERAL")
                     launchAtLoginRow
+                    sectionLabel("UPDATES")
+                    updatesRow
+                    autoUpdateRow
                     about
                 }
                 .padding(.bottom, 10)
@@ -183,6 +190,73 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Updates
+
+    private var updatesRow: some View {
+        settingRow(icon: "arrow.down.circle.fill", title: "Check for Updates",
+                   subtitle: updateSubtitle, topBorder: false) {
+            updateControl
+        }
+    }
+
+    private var autoUpdateRow: some View {
+        settingRow(icon: "clock.arrow.circlepath", title: "Check automatically",
+                   subtitle: "Once a day, when the panel opens") {
+            toggle($settings.autoUpdateCheckEnabled)
+        }
+    }
+
+    /// The row's one-line status: the installer's phase wins while it runs (or failed — the
+    /// message stays until a retry), otherwise the checker's result.
+    private var updateSubtitle: String {
+        switch updater.phase {
+        case .downloading(let fraction):
+            return fraction.map { "Downloading… \(Int($0 * 100))%" } ?? "Downloading…"
+        case .installing: return "Installing…"
+        case .failed(let message): return message
+        case .idle: break
+        }
+        switch updates.state {
+        case .idle: return "Version \(appVersion)"
+        case .checking: return "Checking…"
+        case .upToDate: return "Version \(appVersion) — you're up to date"
+        case .available(let info): return "Version \(info.version) is available"
+        case .failed(let message): return message
+        }
+    }
+
+    /// Trailing control: a spinner while anything runs, the accent **Update** button once a
+    /// newer release is found (it doubles as Retry after an install failure — the checker still
+    /// holds `.available`), otherwise the plain **Check** link.
+    @ViewBuilder private var updateControl: some View {
+        switch updater.phase {
+        case .downloading, .installing:
+            ProgressView().controlSize(.small)
+        case .idle, .failed:
+            switch updates.state {
+            case .checking:
+                ProgressView().controlSize(.small)
+            case .available(let info):
+                Button { Task { await updater.install(info) } } label: {
+                    Text("Update").font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(tokens.isDark ? Color(hex: 0x05291f) : .white)
+                        .padding(.horizontal, 12).padding(.vertical, 5)
+                        .background(tokens.accent, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .help("Download and install version \(info.version), then relaunch")
+            case .idle, .upToDate, .failed:
+                linkButton("Check") { Task { await updates.check() } }
+            }
+        }
+    }
+
+    /// The running build's marketing version (`CFBundleShortVersionString`) — stamped from the
+    /// release tag by CI, so this is what the update check compares against.
+    private var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+    }
+
     /// One settings row: a tinted icon tile, a title + subtitle, and a trailing control. `mono`
     /// renders the subtitle monospaced (the folder path); `topBorder` draws the hairline divider.
     private func settingRow<Trailing: View>(
@@ -213,7 +287,7 @@ struct SettingsView: View {
     private var about: some View {
         VStack(spacing: 6) {
             MenuBarLabel(isPlaying: false, tint: tokens.accent)   // the equalizer mark
-            Text("Qurani 1.0").font(.system(size: 12, weight: .semibold)).foregroundStyle(tokens.text)
+            Text("Qurani \(appVersion)").font(.system(size: 12, weight: .semibold)).foregroundStyle(tokens.text)
             VStack(spacing: 2) {
                 Text("Free Quran radio · macOS")
                 Text("Audio: mp3quran · everyayah · quranicaudio · Quran.com")
