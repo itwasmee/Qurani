@@ -119,6 +119,14 @@ struct GlassPanel: View {
                              onClose: { showingSettings = false })
             }
         }
+        // `.preferredColorScheme` alone doesn't reliably re-appearance a MenuBarExtra window (the
+        // system owns it), so native-styled text — the segmented tab labels, steppers, text-field
+        // carets, the hotkey recorder — kept following the macOS appearance instead of the chosen
+        // theme (dark text on a dark theme when macOS is light, and vice versa). Forcing the
+        // environment's colorScheme keeps every default `.primary` color and control in step with
+        // the theme; GlassPanel's own `scheme` reads the *parent* environment, so `.system` still
+        // resolves from the real macOS appearance.
+        .environment(\.colorScheme, tokens.isDark ? .dark : .light)
         .preferredColorScheme(theme == .system ? nil : (resolved == .sahar ? .light : .dark))
     }
 

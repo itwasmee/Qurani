@@ -15,7 +15,8 @@ import QuraniKit
 /// — they do NOT write back to `MixPoolStore`, so a bulk "Clear" can't wipe the saved pool. The pool
 /// is curated from Explore's "+ Mix pool"; this tab just selects from it for one run. Phantom entries
 /// (a seeded id the catalog no longer lists, or a local name whose files were removed) are reconciled
-/// away before the POOL count / build. `model.isMixing` swaps in the playing/queue UI.
+/// away before the POOL count / build. `model.isMixing` swaps in the playing/queue UI; its back
+/// chevron (`showBuild`) returns to this build page while the session keeps playing.
 struct MixTabView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var catalog: CatalogStore
@@ -31,6 +32,10 @@ struct MixTabView: View {
     /// written back, so "Clear" / "Select all" can't mutate the saved pool.
     @State private var selectedOnDemand: Set<Int> = []
     @State private var order: MixConfig.Order = .shuffle
+    /// While a mix session runs, the queue's back chevron flips this to show the build page again
+    /// (the session keeps playing). Cleared by the build page's "back to queue" chip and whenever a
+    /// new mix starts, and reset naturally when the tab is reopened (fresh view identity).
+    @State private var showBuild = false
     @State private var rangeMode: RangeMode = .full
     @State private var juz = 1
     @State private var customStart = 1
@@ -54,7 +59,7 @@ struct MixTabView: View {
 
     var body: some View {
         Group {
-            if model.isMixing {
+            if model.isMixing, !showBuild {
                 playingBody
             } else {
                 buildBody
@@ -73,6 +78,7 @@ struct MixTabView: View {
         // simply isn't rendered when nothing qualifies (the manual POOL below always shows).
         let suggested = suggestions
         return VStack(spacing: 0) {
+            if model.isMixing { backToMixRow }
             mixHeader
             if !suggested.isEmpty { suggestedSection(suggested) }
             poolHeader
@@ -81,6 +87,29 @@ struct MixTabView: View {
             if model.mixNoCoverage { noCoverageHint }
             startButton
         }
+    }
+
+    /// Shown at the top of the build page while a mix session is still running (the user tapped the
+    /// queue's back chevron): one tap returns to the playing queue without touching the session.
+    private var backToMixRow: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) { showBuild = false }
+        } label: {
+            HStack(spacing: 8) {
+                EqualizerDots(color: tokens.accent)
+                Text("Mix playing — back to queue")
+                    .font(.system(size: 11, weight: .semibold)).foregroundStyle(tokens.accent)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .bold)).foregroundStyle(tokens.accent)
+            }
+            .padding(.horizontal, 11).padding(.vertical, 8)
+            .background(tokens.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+            .contentShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 13).padding(.top, 4)
+        .help("Return to the running mix queue")
     }
 
     /// Shown when a non-empty selection built an empty queue (`AppModel.mixNoCoverage`): the chosen
@@ -158,6 +187,7 @@ struct MixTabView: View {
     /// Build the preset's pool and start a shuffled, full-Qur'an session — same entry point the
     /// manual Start uses, so `isMixing` flips and the playing queue takes over.
     private func startSuggestion(_ s: MixSuggestion) {
+        showBuild = false   // a fresh session always lands on its queue
         model.startMix(config: MixConfig(order: .shuffle, range: .full),
                        pool: model.buildPool(onDemandIDs: s.onDemandIDs, localNames: s.localNames))
     }
@@ -305,6 +335,18 @@ struct MixTabView: View {
 
     private var playingHeader: some View {
         HStack(spacing: 8) {
+            // Back to the build ("main mix") page — the session keeps playing; the build page
+            // then shows a "back to queue" chip to return here.
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { showBuild = true }
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 13, weight: .semibold)).foregroundStyle(tokens.text)
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Back to mix setup")
             VStack(alignment: .leading, spacing: 1) {
                 Text("Random Mix · \(orderLabel)")
                     .font(.system(size: 13, weight: .bold)).foregroundStyle(tokens.text)
@@ -533,6 +575,7 @@ struct MixTabView: View {
     }
 
     private func start() {
+        showBuild = false   // a fresh session always lands on its queue
         let config = MixConfig(order: order, range: resolvedRange)
         let builtPool = model.buildPool(onDemandIDs: validOnDemand, localNames: validLocal)
         model.startMix(config: config, pool: builtPool)
