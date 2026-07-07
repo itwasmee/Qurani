@@ -13,6 +13,8 @@ import Foundation
     @Published public var autoImportEnabled: Bool = true { didSet { save() } }
     /// Whether finishing an on-demand surah auto-advances to the next surah in the reciter's moshaf.
     @Published public var autoplayEnabled: Bool = true { didSet { save() } }
+    /// Whether opening the panel silently checks GitHub Releases for a newer build (daily cadence).
+    @Published public var autoUpdateCheckEnabled: Bool = true { didSet { save() } }
 
     private let fileURL: URL
     /// Suppresses the `save()` that the init-body load triggers: the `= true` declarations mean the
@@ -29,6 +31,7 @@ import Foundation
             mediaKeysEnabled = stored.mediaKeysEnabled
             autoImportEnabled = stored.autoImportEnabled
             autoplayEnabled = stored.autoplayEnabled
+            autoUpdateCheckEnabled = stored.autoUpdateCheckEnabled
         }
         loaded = true
     }
@@ -44,6 +47,7 @@ import Foundation
         var mediaKeysEnabled = true
         var autoImportEnabled = true
         var autoplayEnabled = true
+        var autoUpdateCheckEnabled = true
     }
 
     /// Decode the JSON file; a missing or corrupt/garbage file yields nil → caller keeps defaults.
@@ -62,7 +66,7 @@ import Foundation
         try? FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(),
                                                  withIntermediateDirectories: true)
         let snapshot = Persisted(mediaKeysEnabled: mediaKeysEnabled, autoImportEnabled: autoImportEnabled,
-                                 autoplayEnabled: autoplayEnabled)
+                                 autoplayEnabled: autoplayEnabled, autoUpdateCheckEnabled: autoUpdateCheckEnabled)
         guard let data = try? JSONEncoder().encode(snapshot) else { return }
         try? data.write(to: fileURL, options: .atomic)
     }

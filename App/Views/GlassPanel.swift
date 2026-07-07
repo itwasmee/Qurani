@@ -17,6 +17,10 @@ struct GlassPanel: View {
     @ObservedObject var library: LibraryStore
     @ObservedObject var importer: LibraryImporter
     @ObservedObject var settings: SettingsStore
+    /// Release check — observed here (not via AppModel, which doesn't forward child changes) so a
+    /// found update live-badges the gear and the Settings row. `model.updater` rides along to
+    /// Settings for the install flow.
+    @ObservedObject var updates: UpdateChecker
     let surahs: [Surah]
     let play: (Reciter, Moshaf, Surah) -> Void
     let playLocal: (LocalTrack) -> Void
@@ -115,7 +119,8 @@ struct GlassPanel: View {
         // same overlay mechanism as the tagger review. Drawn after it so an open Settings sits on top.
         .overlay {
             if showingSettings {
-                SettingsView(settings: settings, importer: importer, tokens: tokens,
+                SettingsView(settings: settings, importer: importer,
+                             updates: updates, updater: model.updater, tokens: tokens,
                              onClose: { showingSettings = false })
             }
         }
@@ -190,10 +195,18 @@ struct GlassPanel: View {
     /// formerly an inline menu here) rather than a small popover menu — one place for every preference,
     /// matching the mockup.
     private var settingsButton: some View {
-        Button { showingSettings = true } label: {
+        let updateWaiting = if case .available = updates.state { true } else { false }
+        return Button { showingSettings = true } label: {
             Image(systemName: "gearshape").font(.system(size: 15)).foregroundStyle(tokens.muted)
+                // A quiet update badge — the panel never interrupts; the dot just points at the
+                // Settings screen, where the Updates row carries the version and the Update button.
+                .overlay(alignment: .topTrailing) {
+                    if updateWaiting {
+                        Circle().fill(tokens.accent).frame(width: 7, height: 7).offset(x: 3, y: -3)
+                    }
+                }
         }
         .buttonStyle(.plain)
-        .help("Settings")
+        .help(updateWaiting ? "Settings — update available" : "Settings")
     }
 }

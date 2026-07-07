@@ -21,6 +21,11 @@ import QuraniKit
     /// User preferences shown in the Settings screen (media-keys + auto-import toggles). Persisted
     /// like the other stores; observed directly by `SettingsView`.
     let settings: SettingsStore
+    /// Release check (QuraniKit, testable) + the AppKit installer. Owned here — not by the
+    /// Settings screen — so a found update survives Settings closing and can badge the gear.
+    /// Observed directly by `GlassPanel`/`SettingsView` (AppModel doesn't forward child changes).
+    let updates: UpdateChecker
+    let updater = SelfUpdater()
     @Published var surahs: [Surah] = []
 
     /// Explore deep-link request: set to a reciter id to ask the Explore tab to open that reciter's
@@ -64,6 +69,8 @@ import QuraniKit
         self.pool = pool
         self.library = library
         self.settings = settings
+        self.updates = UpdateChecker(currentVersion:
+            Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")
         // Give the importer a live read of the Auto-import setting so `chooseLibraryFolder()` only
         // re-arms the watcher when auto-import is on (AppModel owns both the importer and settings).
         self.importer = LibraryImporter(library: library,
@@ -80,6 +87,13 @@ import QuraniKit
         engine.$status
             .sink { [bridge] status in bridge.updatePlaybackState(status) }
             .store(in: &cancellables)
+    }
+
+    /// Silent daily update check — runs on every panel open (from `QuraniApp`'s `.task`), gated
+    /// by the Settings toggle; `UpdateChecker` throttles to once per 24h internally.
+    func autoCheckForUpdates() async {
+        guard settings.autoUpdateCheckEnabled else { return }
+        await updates.autoCheckIfDue()
     }
 
     func bootstrap() async {

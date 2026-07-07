@@ -129,6 +129,7 @@ import QuraniKit
                                    pool: MixPoolStore(directory: tmp),
                                    library: library, importer: LibraryImporter(library: library),
                                    settings: SettingsStore(directory: tmp),
+                                   updates: model.updates,
                                    surahs: surahs,
                                    play: { _, _, _ in }, playLocal: { _ in },
                                    commitImports: { _ in })   // Live tab shown; other tabs unused here
@@ -297,10 +298,15 @@ import QuraniKit
             let tokens = Tokens.of(theme)
             let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             let library = LibraryStore(directory: tmp)
+            // An idle checker with a failing transport: the Updates row renders its resting
+            // "Version 1.0" state and the snapshot can never hit the network.
             let view = SettingsView(settings: SettingsStore(directory: tmp),
                                     importer: LibraryImporter(library: library),
+                                    updates: UpdateChecker(currentVersion: "1.0",
+                                                           fetch: { _ in throw URLError(.notConnectedToInternet) }),
+                                    updater: SelfUpdater(),
                                     tokens: tokens, onClose: {})
-                .frame(width: 344, height: 620)
+                .frame(width: 344, height: 760)   // tall enough for the UPDATES section + About
                 .environment(\.colorScheme, isDark ? .dark : .light).background(tokens.bg)
             let path = "\(outDir)/settings-\(raw).png"
             if writePNG(view, to: path) { written.append(path) }

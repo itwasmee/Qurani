@@ -24,7 +24,9 @@ jobs:
         run: brew install xcodegen
 
       - name: Build & package
-        run: bash scripts/package.sh
+        # Stamp the tag into the build (v1.1 → MARKETING_VERSION 1.1) so the in-app update
+        # check can compare the running version against the latest release tag.
+        run: VERSION="${GITHUB_REF_NAME#v}" bash scripts/package.sh
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
@@ -44,5 +46,8 @@ jobs:
 
             ## Manual
             Download **Qurani.dmg** below, open it, and drag **Qurani** onto **Applications**. The app is unsigned (no Apple Developer ID), so on first launch macOS asks once — **System Settings → Privacy & Security → Open Anyway**.
+
+            ## Already installed?
+            Update from inside the app: **Settings → Check for Updates**.
 
             Requires macOS 26 (Tahoe) or newer.
